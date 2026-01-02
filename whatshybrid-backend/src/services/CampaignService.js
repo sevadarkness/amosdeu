@@ -3,7 +3,7 @@
  * WhatsHybrid Pro v7.1.0
  */
 
-const { v4: uuidv4 } = require('uuid');
+const { v4: uuidv4 } = require('../utils/uuid-wrapper');
 
 class CampaignService {
   constructor(db, eventEmitter = null) {

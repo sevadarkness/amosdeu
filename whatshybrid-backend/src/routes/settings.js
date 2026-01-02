@@ -4,7 +4,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { v4: uuidv4 } = require('uuid');
+const { v4: uuidv4 } = require('../utils/uuid-wrapper');
 const crypto = require('crypto');
 
 const db = require('../utils/database');

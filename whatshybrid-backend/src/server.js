@@ -176,6 +176,11 @@ io.on('connection', (socket) => {
 
 async function startServer() {
   try {
+    // Initialize UUID module (ESM compatibility)
+    const { initUUID } = require('./utils/uuid-wrapper');
+    await initUUID();
+    logger.info('UUID module initialized');
+
     // Initialize database
     await database.initialize();
     logger.info('Database initialized');
