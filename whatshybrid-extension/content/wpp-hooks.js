@@ -4024,6 +4024,32 @@ window.whl_hooks_main = () => {
         }
     });
     
+    // ===== FASE 4: MESSAGE HANDLERS FOR SNAPSHOT AND DEEP SCAN =====
+    window.addEventListener('message', async (event) => {
+        if (event.origin !== window.location.origin || event.source !== window) return;
+        
+        if (event.data?.type === 'performSnapshot' || event.data?.action === 'performSnapshot') {
+            try {
+                const result = await performInitialSnapshot();
+                window.postMessage({ type: 'WHL_SNAPSHOT_RESULT', ...result }, window.location.origin);
+            } catch (e) {
+                console.error('[WHL Hooks] Snapshot error:', e);
+                window.postMessage({ type: 'WHL_SNAPSHOT_RESULT', success: false, error: e.message }, window.location.origin);
+            }
+        }
+        
+        if (event.data?.type === 'performDeepScan' || event.data?.action === 'performDeepScan') {
+            try {
+                const options = event.data?.options || {};
+                const result = await performDeepScan(options);
+                window.postMessage({ type: 'WHL_DEEP_SCAN_RESULT', ...result }, window.location.origin);
+            } catch (e) {
+                console.error('[WHL Hooks] Deep scan error:', e);
+                window.postMessage({ type: 'WHL_DEEP_SCAN_RESULT', success: false, error: e.message }, window.location.origin);
+            }
+        }
+    });
+    
     // Expose helper functions for use by sidepanel and other components
     window.WHL_MessageContentHelpers = {
         isBase64Image: isBase64Image,
