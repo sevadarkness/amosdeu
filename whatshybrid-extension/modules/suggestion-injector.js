@@ -567,25 +567,31 @@
     inputField.focus();
 
     if (!focusOnly) {
-      // Insere o texto
+      // CORREÇÃO: Limpar campo completamente e inserir texto UMA ÚNICA VEZ
       inputField.innerHTML = '';
       
-      // Método 1: execCommand (funciona na maioria dos casos)
-      document.execCommand('insertText', false, text);
-
-      // Se não funcionou, tenta método alternativo
-      if (!inputField.textContent || inputField.textContent.length === 0) {
-        // v7.5.0: Usar digitação humana
-    if (window.HumanTyping && typeof window.HumanTyping.type === 'function') {
-      inputField.innerHTML = '';
-      // Usar promise sem await (função não é async)
-      window.HumanTyping.type(inputField, text, { minDelay: 20, maxDelay: 50 })
-        .catch(e => console.error('[SuggestionInjector] Erro ao digitar:', e));
-    } else {
-      inputField.textContent = text;
-    }
-        inputField.dispatchEvent(new InputEvent('input', { bubbles: true }));
+      // Método 1: Tentar execCommand (mais compatível com WhatsApp)
+      const inserted = document.execCommand('insertText', false, text);
+      
+      // Se execCommand não funcionou, usar método alternativo
+      if (!inserted || !inputField.textContent || inputField.textContent.length === 0) {
+        // v7.5.0: Usar digitação humana se disponível
+        if (window.HumanTyping && typeof window.HumanTyping.type === 'function') {
+          try {
+            await window.HumanTyping.type(inputField, text, { minDelay: 20, maxDelay: 50 });
+          } catch (e) {
+            console.error('[SuggestionInjector] Erro ao digitar:', e);
+            // Fallback: inserção direta
+            inputField.textContent = text;
+          }
+        } else {
+          // Fallback: inserção direta
+          inputField.textContent = text;
+        }
       }
+
+      // Dispara evento de input UMA ÚNICA VEZ para WhatsApp detectar
+      inputField.dispatchEvent(new InputEvent('input', { bubbles: true }));
 
       // Move cursor para o final
       const range = document.createRange();
@@ -595,9 +601,6 @@
       sel.removeAllRanges();
       sel.addRange(range);
     }
-
-    // Dispara evento de input para WhatsApp detectar
-    inputField.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
   // ============================================================
