@@ -2560,6 +2560,57 @@ window.whl_hooks_main = () => {
     
 
     /**
+     * Aguarda módulos essenciais do WhatsApp estarem disponíveis
+     * @param {number} timeout - Timeout máximo em ms (default 5000)
+     * @returns {Promise<boolean>} - true se módulos estão prontos
+     */
+    async function ensureModulesReady(timeout = 5000) {
+        const startTime = Date.now();
+        const requiredModules = ['WAWebWidFactory', 'WAWebChatCollection', 'WAWebMediaPrep'];
+        
+        while (Date.now() - startTime < timeout) {
+            try {
+                let allReady = true;
+                for (const modName of requiredModules) {
+                    const mod = require(modName);
+                    if (!mod) {
+                        allReady = false;
+                        break;
+                    }
+                }
+                
+                // Também verificar MODULES.MEDIA_PREP
+                if (allReady && MODULES.MEDIA_PREP?.prepareMedia) {
+                    console.log('[WHL Hooks] ✅ Todos módulos prontos');
+                    return true;
+                }
+            } catch (e) {
+                // Módulo não disponível ainda
+            }
+            
+            await new Promise(r => setTimeout(r, 200));
+        }
+        
+        console.warn('[WHL Hooks] ⚠️ Timeout aguardando módulos');
+        return false;
+    }
+
+    /**
+     * Calcula delay pós-envio baseado no tamanho do arquivo
+     * @param {number} fileSizeBytes - Tamanho em bytes
+     * @returns {number} - Delay em ms
+     */
+    function calculatePostSendDelay(fileSizeBytes) {
+        const MIN_DELAY = 2000;  // 2s mínimo
+        const MAX_DELAY = 10000; // 10s máximo
+        
+        // ~1s adicional por cada 500KB
+        const sizeDelayMs = Math.floor(fileSizeBytes / 500000) * 1000;
+        
+        return Math.min(MAX_DELAY, MIN_DELAY + sizeDelayMs);
+    }
+
+    /**
      * Envia áudio como arquivo de áudio (não gravação nativa)
      * @param {string} phoneNumber - Número no formato internacional
      * @param {string} audioDataUrl - Data URL do áudio (base64)
@@ -2567,72 +2618,133 @@ window.whl_hooks_main = () => {
      * @returns {Promise<boolean>} - true se áudio foi enviado
      */
     async function sendAudioDirect(phoneNumber, audioDataUrl, filename = 'audio.ogg') {
-        try {
-            console.log('[WHL Hooks] 🎤 Iniciando envio de áudio para', phoneNumber);
-
-            // ✅ Garantir que o chat correto esteja aberto/instanciado
-            const opened = await abrirChatPorNumero(phoneNumber);
-            if (!opened) {
-                console.log('[WHL Hooks] Chat não encontrado/aberto para envio');
-                return false;
+        console.log('[WHL Hooks] 🎤 Iniciando envio de áudio para', phoneNumber);
+        
+        // ✅ PASSO 0: Aguardar módulos
+        await ensureModulesReady(3000);
+        
+        // Converter data URL para blob/file
+        const response = await fetch(audioDataUrl);
+        const blob = await response.blob();
+        
+        // ✅ Normalizar MIME type (sem espaço!)
+        let mimeType = blob.type || 'audio/ogg';
+        if (mimeType.includes('webm')) {
+            mimeType = 'audio/ogg;codecs=opus'; // SEM espaço!
+        }
+        // Remover espaço se existir
+        mimeType = mimeType.replace('; ', ';');
+        
+        const file = new File([blob], filename, { type: mimeType });
+        const delayMs = calculatePostSendDelay(blob.size);
+        
+        // ✅ CAMADA 1: WPP.js (se disponível)
+        if (window.WPP?.chat?.sendFileMessage) {
+            try {
+                console.log('[WHL Hooks] 🎤 Tentando via WPP.js...');
+                const chatId = phoneNumber.includes('@') ? phoneNumber : `${phoneNumber}@c.us`;
+                await window.WPP.chat.sendFileMessage(chatId, file, {
+                    type: 'audio',
+                    isPtt: true,
+                    filename: filename,
+                    mimetype: mimeType
+                });
+                console.log('[WHL Hooks] ✅ Áudio PTT enviado via WPP.js');
+                await new Promise(r => setTimeout(r, delayMs));
+                return true;
+            } catch (e) {
+                console.warn('[WHL Hooks] WPP.js PTT falhou:', e.message);
             }
-
-            // ✅ Obter chat via WAWebChatCollection (API atual)
+        }
+        
+        // ✅ CAMADA 2: MEDIA_PREP + chat.sendMessage
+        try {
+            const opened = await abrirChatPorNumero(phoneNumber);
+            if (!opened) throw new Error('Chat não abriu');
+            
             const WF = require('WAWebWidFactory');
             const CC = require('WAWebChatCollection');
             const wid = WF.createWid(phoneNumber + '@c.us');
-            let chat = CC?.ChatCollection?.get?.(wid) || null;
-
+            let chat = CC?.ChatCollection?.get?.(wid);
+            
             if (!chat) {
                 const ChatModel = require('WAWebChatModel');
                 chat = new ChatModel.Chat({ id: wid });
                 CC.ChatCollection.add(chat);
             }
-
-            if (!chat) {
-                console.log('[WHL Hooks] Chat não encontrado para envio');
-                return false;
-            }
-// Converter data URL para blob
-            const response = await fetch(audioDataUrl);
-            const blob = await response.blob();
             
-            // Determinar tipo MIME correto para áudio
-            let mimeType = blob.type || 'audio/ogg';
-            if (mimeType.includes('webm')) {
-                mimeType = 'audio/ogg; codecs=opus'; // WhatsApp prefere ogg
-            }
-            
-            const file = new File([blob], filename, { type: mimeType });
-            
-            // Preparar mídia usando API interna
-            if (MODULES.MEDIA_PREP && typeof MODULES.MEDIA_PREP.prepareMedia === 'function') {
+            if (chat && MODULES.MEDIA_PREP?.prepareMedia) {
+                console.log('[WHL Hooks] 🎤 Tentando via MEDIA_PREP...');
                 const mediaData = await MODULES.MEDIA_PREP.prepareMedia(file, { 
-                    isPtt: true,  // Marca como mensagem de voz (PTT = Push To Talk)
-                    asDocument: false 
+                    isPtt: true,
+                    asDocument: false
                 });
                 
-                if (!chat.sendMessage || typeof chat.sendMessage !== 'function') {
-                    console.warn('[WHL Hooks] chat.sendMessage não disponível');
-                    return false;
-                }
-                
-                try {
+                if (chat.sendMessage) {
                     await chat.sendMessage(mediaData, { isPtt: true });
-                    console.log('[WHL Hooks] ✅ Áudio enviado via API para', phoneNumber);
+                    console.log('[WHL Hooks] ✅ Áudio PTT enviado via MEDIA_PREP');
+                    await new Promise(r => setTimeout(r, delayMs));
                     return true;
-                } catch (sendError) {
-                    console.error('[WHL Hooks] Erro ao enviar áudio:', sendError);
-                    return false;
                 }
-            } else {
-                console.log('[WHL Hooks] MEDIA_PREP não disponível para áudio');
-                return false;
             }
-        } catch (error) {
-            console.error('[WHL Hooks] Erro ao enviar áudio:', error);
-            return false;
+        } catch (e) {
+            console.warn('[WHL Hooks] MEDIA_PREP PTT falhou:', e.message);
         }
+        
+        // ✅ CAMADA 2.5: Tentar como arquivo de áudio (não PTT)
+        try {
+            console.log('[WHL Hooks] 🎤 Tentando como arquivo de áudio...');
+            const result = await sendFileDirect(phoneNumber, audioDataUrl, filename, '');
+            if (result) {
+                console.log('[WHL Hooks] ✅ Áudio enviado como arquivo');
+                return true;
+            }
+        } catch (e) {
+            console.warn('[WHL Hooks] Envio como arquivo falhou:', e.message);
+        }
+        
+        // ✅ CAMADA 3: FALLBACK DOM (último recurso)
+        try {
+            console.log('[WHL Hooks] 🎤 Tentando fallback DOM para áudio...');
+            
+            await abrirChatPorNumero(phoneNumber);
+            await new Promise(r => setTimeout(r, 1000));
+            
+            const attachBtn = document.querySelector('[data-testid="clip"]') ||
+                              document.querySelector('span[data-icon="attach-menu-plus"]')?.closest('button');
+            
+            if (attachBtn) {
+                attachBtn.click();
+                await new Promise(r => setTimeout(r, 500));
+                
+                const audioInput = document.querySelector('input[accept*="audio"]') ||
+                                   document.querySelector('input[type="file"]');
+                
+                if (audioInput) {
+                    const dt = new DataTransfer();
+                    dt.items.add(file);
+                    audioInput.files = dt.files;
+                    audioInput.dispatchEvent(new Event('change', { bubbles: true }));
+                    
+                    await new Promise(r => setTimeout(r, 2000));
+                    
+                    const sendBtn = document.querySelector('[data-testid="send"]') ||
+                                   document.querySelector('span[data-icon="send"]')?.closest('button');
+                    
+                    if (sendBtn) {
+                        sendBtn.click();
+                        console.log('[WHL Hooks] ✅ Áudio enviado via fallback DOM');
+                        await new Promise(r => setTimeout(r, Math.max(3000, delayMs)));
+                        return true;
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('[WHL Hooks] Fallback DOM falhou:', e.message);
+        }
+        
+        console.error('[WHL Hooks] ❌ TODAS as camadas falharam para enviar áudio');
+        return false;
     }
 
     /**
@@ -2644,64 +2756,116 @@ window.whl_hooks_main = () => {
      * @returns {Promise<boolean>} - true se arquivo foi enviado
      */
     async function sendFileDirect(phoneNumber, fileDataUrl, filename = 'document', caption = '') {
-        try {
-            console.log('[WHL Hooks] 📁 Iniciando envio de arquivo para', phoneNumber);
-
-            // ✅ Garantir que o chat correto esteja aberto/instanciado
-            const opened = await abrirChatPorNumero(phoneNumber);
-            if (!opened) {
-                console.log('[WHL Hooks] Chat não encontrado/aberto para envio');
-                return false;
+        console.log('[WHL Hooks] 📁 Iniciando envio de arquivo para', phoneNumber);
+        
+        // ✅ PASSO 0: Aguardar módulos
+        await ensureModulesReady(3000);
+        
+        // Converter data URL para blob/file
+        const response = await fetch(fileDataUrl);
+        const blob = await response.blob();
+        const mimeType = blob.type || 'application/octet-stream';
+        const file = new File([blob], filename, { type: mimeType });
+        const delayMs = calculatePostSendDelay(blob.size);
+        
+        // ✅ CAMADA 1: WPP.js (se disponível)
+        if (window.WPP?.chat?.sendFileMessage) {
+            try {
+                console.log('[WHL Hooks] 📁 Tentando via WPP.js...');
+                const chatId = phoneNumber.includes('@') ? phoneNumber : `${phoneNumber}@c.us`;
+                await window.WPP.chat.sendFileMessage(chatId, file, {
+                    type: 'document',
+                    filename: filename,
+                    caption: caption
+                });
+                console.log('[WHL Hooks] ✅ Arquivo enviado via WPP.js');
+                await new Promise(r => setTimeout(r, delayMs));
+                return true;
+            } catch (e) {
+                console.warn('[WHL Hooks] WPP.js falhou:', e.message);
             }
-
-            // ✅ Obter chat via WAWebChatCollection (API atual)
+        }
+        
+        // ✅ CAMADA 2: MEDIA_PREP + chat.sendMessage
+        try {
+            const opened = await abrirChatPorNumero(phoneNumber);
+            if (!opened) throw new Error('Chat não abriu');
+            
             const WF = require('WAWebWidFactory');
             const CC = require('WAWebChatCollection');
             const wid = WF.createWid(phoneNumber + '@c.us');
-            let chat = CC?.ChatCollection?.get?.(wid) || null;
-
+            let chat = CC?.ChatCollection?.get?.(wid);
+            
             if (!chat) {
                 const ChatModel = require('WAWebChatModel');
                 chat = new ChatModel.Chat({ id: wid });
                 CC.ChatCollection.add(chat);
             }
-
-            if (!chat) {
-                console.log('[WHL Hooks] Chat não encontrado para envio');
-                return false;
-            }
-// Converter data URL para blob
-            const response = await fetch(fileDataUrl);
-            const blob = await response.blob();
-            const file = new File([blob], filename, { type: blob.type || 'application/octet-stream' });
             
-            // Preparar mídia como documento
-            if (MODULES.MEDIA_PREP && typeof MODULES.MEDIA_PREP.prepareMedia === 'function') {
-                const mediaData = await MODULES.MEDIA_PREP.prepareMedia(file, { 
-                    asDocument: true  // Envia como documento/arquivo
-                });
+            if (chat && MODULES.MEDIA_PREP?.prepareMedia) {
+                console.log('[WHL Hooks] 📁 Tentando via MEDIA_PREP...');
+                const mediaData = await MODULES.MEDIA_PREP.prepareMedia(file, { asDocument: true });
                 
-                if (!chat.sendMessage || typeof chat.sendMessage !== 'function') {
-                    console.warn('[WHL Hooks] chat.sendMessage não disponível');
-                    return false;
-                }
-                
-                try {
+                if (chat.sendMessage) {
                     await chat.sendMessage(mediaData, { caption });
-                    console.log('[WHL Hooks] ✅ Arquivo enviado via API para', phoneNumber);
+                    console.log('[WHL Hooks] ✅ Arquivo enviado via MEDIA_PREP');
+                    await new Promise(r => setTimeout(r, delayMs));
                     return true;
-                } catch (sendError) {
-                    console.error('[WHL Hooks] Erro ao enviar arquivo:', sendError);
-                    return false;
                 }
-            } else {
-                console.log('[WHL Hooks] MEDIA_PREP não disponível para arquivo');
-                return false;
             }
-        } catch (error) {
-            console.error('[WHL Hooks] Erro ao enviar arquivo:', error);
-            return false;
+        } catch (e) {
+            console.warn('[WHL Hooks] MEDIA_PREP falhou:', e.message);
         }
+        
+        // ✅ CAMADA 3: FALLBACK DOM (último recurso)
+        try {
+            console.log('[WHL Hooks] 📁 Tentando fallback DOM...');
+            
+            // Abrir chat primeiro
+            await abrirChatPorNumero(phoneNumber);
+            await new Promise(r => setTimeout(r, 1000));
+            
+            // Clicar no botão de anexar
+            const attachBtn = document.querySelector('[data-testid="clip"]') ||
+                              document.querySelector('span[data-icon="attach-menu-plus"]')?.closest('button') ||
+                              document.querySelector('span[data-icon="clip"]')?.closest('div');
+            
+            if (attachBtn) {
+                attachBtn.click();
+                await new Promise(r => setTimeout(r, 500));
+                
+                // Procurar input de documento
+                const docInput = document.querySelector('input[accept="*"]') ||
+                                 document.querySelector('input[type="file"]:not([accept*="image"]):not([accept*="video"])') ||
+                                 document.querySelector('input[type="file"]');
+                
+                if (docInput) {
+                    const dt = new DataTransfer();
+                    dt.items.add(file);
+                    docInput.files = dt.files;
+                    docInput.dispatchEvent(new Event('change', { bubbles: true }));
+                    
+                    await new Promise(r => setTimeout(r, 2000));
+                    
+                    // Clicar em enviar
+                    const sendBtn = document.querySelector('[data-testid="send"]') ||
+                                   document.querySelector('span[data-icon="send"]')?.closest('button') ||
+                                   document.querySelector('span[data-icon="send"]')?.parentElement;
+                    
+                    if (sendBtn) {
+                        sendBtn.click();
+                        console.log('[WHL Hooks] ✅ Arquivo enviado via fallback DOM');
+                        await new Promise(r => setTimeout(r, Math.max(3000, delayMs)));
+                        return true;
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('[WHL Hooks] Fallback DOM falhou:', e.message);
+        }
+        
+        console.error('[WHL Hooks] ❌ TODAS as camadas falharam para enviar arquivo');
+        return false;
     }
 
     /**
@@ -3925,96 +4089,52 @@ window.whl_hooks_main = () => {
                         error: error.message
                     }, window.location.origin);
                 }
+            })();
+        }
+    });
+
+    // ===== GUARD GLOBAL PARA HANDLER DE MÍDIA =====
+    if (!window.__WHL_SEND_MEDIA_HANDLER_REGISTERED__) {
+        window.__WHL_SEND_MEDIA_HANDLER_REGISTERED__ = true;
+        
+        window.addEventListener('message', async (event) => {
+            if (event.data?.type !== 'WHL_SEND_MEDIA') return;
+            if (event.origin !== window.location.origin) return;
             
-    // ===== v7.5.1: HANDLER DE ENVIO DE MÍDIA =====
-    // Recebe pedidos do content script (isolated world) e envia via API própria
-    window.addEventListener('message', async (event) => {
-        if (event.data?.type !== 'WHL_SEND_MEDIA') return;
-        
-        const { messageId, chatId, media } = event.data;
-        console.log('[WPP Hooks] 📤 Recebido pedido de mídia:', media?.type, 'para:', chatId);
-        
-        let success = false;
-        
-        try {
-            // Método 1: Usar WPP.js se disponível
-            if (window.WPP?.chat?.sendFileMessage) {
-                console.log('[WPP Hooks] 📤 Enviando via WPP.js...');
+            const { messageId, chatId, media } = event.data;
+            console.log('[WHL Hooks] 📤 WHL_SEND_MEDIA recebido:', media?.type, 'para:', chatId);
+            
+            let success = false;
+            const phoneNumber = chatId.replace('@c.us', '').replace('@s.whatsapp.net', '');
+            
+            try {
+                // Aguardar módulos
+                await ensureModulesReady(3000);
                 
-                // Converter base64 para blob se necessário
-                let file = media.data;
-                if (typeof media.data === 'string' && media.data.startsWith('data:')) {
-                    const response = await fetch(media.data);
-                    file = await response.blob();
+                if (media.type === 'audio') {
+                    success = await sendAudioDirect(phoneNumber, media.data, media.filename || 'audio.ogg');
+                } else if (media.type === 'document' || media.type === 'file') {
+                    success = await sendFileDirect(phoneNumber, media.data, media.filename || 'document', '');
+                } else if (media.type === 'image') {
+                    success = await sendImageDirect(phoneNumber, media.data, media.caption || '');
+                } else {
+                    // Fallback genérico
+                    success = await sendFileDirect(phoneNumber, media.data, media.filename || 'file', '');
                 }
-                
-                await window.WPP.chat.sendFileMessage(chatId, file, {
-                    type: media.type === 'audio' ? 'audio' : media.type === 'image' ? 'image' : 'document',
-                    isPtt: media.ptt || false,
-                    filename: media.filename || 'file',
-                    mimetype: media.mimetype
-                });
-                
-                success = true;
-                console.log('[WPP Hooks] ✅ Mídia enviada via WPP.js');
+            } catch (e) {
+                console.error('[WHL Hooks] ❌ Erro no WHL_SEND_MEDIA:', e);
             }
-            // Método 2: Usar API interna do WhatsApp
-            else if (window.WAPI?.sendMedia) {
-                console.log('[WPP Hooks] 📤 Enviando via WAPI...');
-                await window.WAPI.sendMedia(chatId, media.data, media.filename, '', media.ptt);
-                success = true;
-                console.log('[WPP Hooks] ✅ Mídia enviada via WAPI');
-            }
-            // Método 3: Fallback - simular upload via input
-            else {
-                console.log('[WPP Hooks] ⚠️ APIs não disponíveis, tentando fallback...');
-                
-                // Converter base64 para File
-                const response = await fetch(media.data);
-                const blob = await response.blob();
-                const file = new File([blob], media.filename || 'file', { type: media.mimetype });
-                
-                // Procurar input de arquivo
-                const input = document.querySelector('input[type="file"][accept*="*"]') ||
-                              document.querySelector('input[type="file"]');
-                
-                if (input) {
-                    // Criar DataTransfer para simular seleção de arquivo
-                    const dt = new DataTransfer();
-                    dt.items.add(file);
-                    input.files = dt.files;
-                    
-                    // Disparar eventos
-                    input.dispatchEvent(new Event('change', { bubbles: true }));
-                    
-                    // Aguardar e clicar em enviar
-                    await new Promise(r => setTimeout(r, 1000));
-                    
-                    const sendBtn = document.querySelector('[data-testid="send"]') ||
-                                   document.querySelector('span[data-icon="send"]')?.parentElement;
-                    if (sendBtn) {
-                        sendBtn.click();
-                        success = true;
-                        console.log('[WPP Hooks] ✅ Mídia enviada via fallback');
-                    }
-                }
-            }
-        } catch (e) {
-            console.error('[WPP Hooks] ❌ Erro ao enviar mídia:', e);
-        }
+            
+            // Responder ao content script
+            window.postMessage({
+                type: 'WHL_MEDIA_SENT',
+                messageId: messageId,
+                success: success
+            }, window.location.origin);
+        });
         
-        // Responder ao content script
-        window.postMessage({
-            type: 'WHL_MEDIA_SENT',
-            messageId: messageId,
-            success: success
-        }, '*');
-    });
-
-
-})();
-        }
-    });
+        console.log('[WHL Hooks] ✅ WHL_SEND_MEDIA handler registrado');
+    }
 
     // ===== EXTRAÇÃO INSTANTÂNEA =====
     window.addEventListener('message', (event) => {
