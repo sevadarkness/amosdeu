@@ -695,7 +695,7 @@ async function updateScheduleStatus(scheduleId, status, completedAt = null) {
 // ===== ENVIO SIMPLIFICADO =====
 // Usar a aba principal do WhatsApp Web ao invés de worker incógnito
 
-async function sendMessageToWhatsApp(phone, text, imageData = null) {
+async function sendMessageToWhatsApp(phone, text, imageData = null, audioData = null, fileData = null) {
     // Encontrar aba do WhatsApp Web
     const tabs = await chrome.tabs.query({ url: 'https://web.whatsapp.com/*' });
     
@@ -720,7 +720,9 @@ async function sendMessageToWhatsApp(phone, text, imageData = null) {
             action: 'SEND_MESSAGE_URL',
             phone: phone,
             text: text,
-            imageData: imageData
+            imageData: imageData,
+            audioData: audioData,
+            fileData: fileData
         });
         
         return result;
