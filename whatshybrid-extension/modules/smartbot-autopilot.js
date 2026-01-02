@@ -1187,6 +1187,13 @@ REGRAS: Responda diretamente, máximo 2-3 frases, português brasileiro.`
   // ============================================================
 
   function createControlPanel() {
+    // DISABLED per v7.6.0 requirements - Autopilot functionality moved to dedicated tab only
+    // Floating autopilot block has been removed as per problem statement:
+    // "All autopilot functionality should be exclusively in the Autopilot tab"
+    console.log('[SmartBot Autopilot] Control panel creation disabled - use dedicated Autopilot tab');
+    return null;
+    
+    /* DISABLED CODE - Floating autopilot panel
     // Remove painel existente
     const existing = document.getElementById('autopilot-panel');
     if (existing) existing.remove();
