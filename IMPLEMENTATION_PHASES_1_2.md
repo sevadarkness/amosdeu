@@ -6,7 +6,9 @@ This document summarizes the implementation of Phases 1-2 of the RECOVER module 
 
 ## Implementation Status
 
-✅ **COMPLETE** - All required features have been implemented and tested.
+✅ **PHASE 1: COMPLETE** - messageVersions persistence implemented
+✅ **PHASE 2: COMPLETE** - Enhanced owner detection with 5 methods
+⚠️ **TESTING: PENDING** - Manual browser testing recommended
 
 ## Phase 1: Core messageVersions Map with History Arrays
 
@@ -14,11 +16,11 @@ This document summarizes the implementation of Phases 1-2 of the RECOVER module 
 
 **File**: `whatshybrid-extension/modules/recover-advanced.js`
 
-✅ Created `messageVersions` Map (line ~14)
+✅ messageVersions Map exists (line 30)
 - Stores message history with state transitions
 - Each entry contains: id, chatId, from, to, type, direction, owner, history[]
 
-✅ Added `MESSAGE_STATES` constants (lines ~26-40)
+✅ MESSAGE_STATES constants (lines 33-46)
 ```javascript
 MESSAGE_STATES = {
   NORMAL, CREATED, EDITED, REVOKED_GLOBAL, DELETED_LOCAL,
@@ -27,9 +29,30 @@ MESSAGE_STATES = {
 }
 ```
 
-✅ Added `REVOKED_UNIVERSE_STATES` array (lines ~43-55)
+✅ REVOKED_UNIVERSE_STATES array (lines 49-59)
 - Defines states that belong to the "Revoked Universe"
 - Includes: DELETED_LOCAL, REVOKED_GLOBAL, EDITED, FAILED, etc.
+
+### 1.2 Storage Implementation (NEW)
+
+✅ **saveToStorage()** updated (lines 214-237)
+- Now persists messageVersions Map to storage
+- Converts Map to serializable object
+- Stores under key 'whl_message_versions'
+- Works with both chrome.storage.local and localStorage fallback
+
+✅ **loadFromStorage()** updated (lines 146-212)
+- Now loads messageVersions from storage
+- Restores Map from serialized object
+- Loads messageVersions before state.messages for proper initialization
+- Backward compatible with existing data
+
+### 1.3 API Addition (NEW)
+
+✅ **getMessageVersions()** added to public API (lines 1583-1590)
+- Returns messageVersions Map as object
+- Allows external access to complete message history
+- Format: `{ messageId: { id, chatId, from, to, type, direction, owner, history[] } }`
 
 ### 1.2 Core Functions
 
@@ -86,13 +109,17 @@ MESSAGE_STATES = {
 - Ensures only numeric characters
 - Returns boolean
 
-### 2.2 Direction Detection
+### 2.2 Direction Detection (UPDATED)
 
-✅ **getOwner()** (lines ~571-601)
-- Detects current user's phone number
-- Tries multiple sources: Store.Conn.me, localStorage, DOM
-- Caches result in state object (not global variable)
-- Error handling for all paths
+✅ **getOwner()** (lines 618-667) - IMPROVED with 5 detection methods
+1. Store.Conn.me._serialized (primary method)
+2. Store.Conn.wid._serialized (fallback 1)
+3. localStorage['last-wid-md'] (fallback 2)
+4. localStorage['last-wid'] (fallback 3)
+5. DOM profile image URL (fallback 4)
+- Validates phone numbers with isValidPhoneNumber()
+- Caches result in state.cachedOwner
+- Returns null if no valid owner found
 
 ✅ **determineDirection(msg)** (lines ~623-641)
 - Classifies messages as: incoming, outgoing, third_party, unknown
@@ -169,9 +196,10 @@ The following functions have been added to `window.RecoverAdvanced`:
 - `extractPhoneNumber(value)` - Enhanced phone extraction
 - `cleanPhoneNumber(phone)` - Clean phone number
 - `isValidPhoneNumber(phone)` - Validate phone number
-- `getOwner()` - Get current user's number
+- `getOwner()` - Get current user's number (5 detection methods)
 - `determineDirection(msg)` - Determine message direction
 - `extractChatId(msg)` - Extract chat ID
+- `getMessageVersions()` - Get all message versions as object (NEW)
 
 ## Code Quality Improvements
 
@@ -191,12 +219,42 @@ The following functions have been added to `window.RecoverAdvanced`:
 
 ## File Changes Summary
 
-1. `whatshybrid-extension/modules/recover-advanced.js` - 423 lines added/modified
-2. `whatshybrid-extension/content/wpp-hooks.js` - 45 lines added/modified
-3. `whatshybrid-extension/tests/recover-phases-1-2.test.js` - 308 lines (new file)
-4. `whatshybrid-extension/tests/README.md` - Documentation updated
+1. `whatshybrid-extension/modules/recover-advanced.js` - Updated:
+   - saveToStorage(): Added messageVersions persistence (24 lines)
+   - loadFromStorage(): Added messageVersions loading (18 lines)
+   - getOwner(): Improved with 5 detection methods (49 lines)
+   - getMessageVersions(): New public API function (8 lines)
+   
+   Total: ~100 lines modified/added
 
-Total: 776 lines of production code + tests
+2. `whatshybrid-extension/content/wpp-hooks.js` - No changes needed
+   - Already correctly calling RecoverAdvanced.registerMessageEvent()
+   - Already sending previousContent for edited messages
+   
+3. `whatshybrid-extension/tests/recover-phases-1-2.test.js` - Existing tests validate implementation
+4. `IMPLEMENTATION_PHASES_1_2.md` - Documentation updated
+
+## Current Implementation Status (January 2, 2026)
+
+### Completed Features ✅
+
+**Phase 1: messageVersions Persistence**
+- [x] messageVersions Map structure exists
+- [x] saveToStorage() persists messageVersions
+- [x] loadFromStorage() restores messageVersions
+- [x] getMessageVersions() public API added
+- [x] Backward compatibility maintained
+
+**Phase 2: Enhanced Direction and Owner Tracking**
+- [x] getOwner() improved with 5 detection methods
+- [x] direction and owner stored in registerMessageEvent()
+- [x] direction filter already working in getFilteredMessages()
+- [x] third_party support exists in filtering
+
+**Hooks Integration**
+- [x] salvarMensagemApagada() calls RecoverAdvanced.registerMessageEvent()
+- [x] salvarMensagemEditada() sends previousContent/previousBody
+- [x] postMessage events emitted correctly
 
 ## Testing Checklist
 
