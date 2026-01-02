@@ -32,15 +32,7 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
   .catch(e => console.warn('[WHL Background] setPanelBehavior failed:', e));
 
 // ===== CORREÇÃO 5.3: BROADCAST DE MENSAGENS RECOVER =====
-// Receber mensagens do content script e fazer broadcast para o sidepanel
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'WHL_RECOVER_NEW_MESSAGE') {
-    // Broadcast para todos os contextos (incluindo sidepanel)
-    chrome.runtime.sendMessage(message).catch(() => {
-      // Ignorar erros se sidepanel não estiver aberto
-    });
-  }
-});
+// Message handlers consolidated into single listener below (see line ~194)
 
 // ===== CONFIGURATION CONSTANTS =====
 const SEND_MESSAGE_TIMEOUT_MS = 45000; // 45 seconds timeout for message sending
@@ -226,7 +218,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     WHL_OPEN_CHAT: handleOpenChat,
     
     // Onboarding: Highlight de botões no Top Panel
-    WHL_ONBOARDING_HIGHLIGHT: handleOnboardingHighlight
+    WHL_ONBOARDING_HIGHLIGHT: handleOnboardingHighlight,
+    
+    // Recover module: broadcast and sync
+    WHL_RECOVER_NEW_MESSAGE: handleRecoverNewMessage,
+    WHL_SYNC_RECOVER_HISTORY: handleSyncRecoverHistory
   };
   
   // Verificar também por message.type (além de message.action)
@@ -692,6 +688,26 @@ async function updateScheduleStatus(scheduleId, status, completedAt = null) {
   }
 }
 
+// Handler: Broadcast recover messages
+function handleRecoverNewMessage(message, sender, sendResponse) {
+  // Broadcast para todos os contextos (incluindo sidepanel)
+  chrome.runtime.sendMessage(message).catch(() => {
+    // Ignorar erros se sidepanel não estiver aberto
+  });
+}
+
+// Handler: Sync recover history to chrome.storage
+function handleSyncRecoverHistory(message, sender, sendResponse) {
+  console.log('[WHL Background] 📥 Syncing recover history:', message.history?.length, 'messages');
+  chrome.storage.local.set({ 
+    'whl_recover_history': message.history || [] 
+  }, () => {
+    console.log('[WHL Background] ✅ Recover history saved to chrome.storage');
+  });
+  sendResponse({ success: true });
+  return true;
+}
+
 // ===== ENVIO SIMPLIFICADO =====
 // Usar a aba principal do WhatsApp Web ao invés de worker incógnito
 
@@ -1142,17 +1158,6 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 
 // ============================================
 // SYNC RECOVER HISTORY
+// Consolidated into main message listener above
 // ============================================
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type === 'WHL_SYNC_RECOVER_HISTORY') {
-    console.log('[WHL Background] 📥 Syncing recover history:', message.history?.length, 'messages');
-    chrome.storage.local.set({ 
-      'whl_recover_history': message.history || [] 
-    }, () => {
-      console.log('[WHL Background] ✅ Recover history saved to chrome.storage');
-    });
-    sendResponse({ success: true });
-    return true;
-  }
-});
 
