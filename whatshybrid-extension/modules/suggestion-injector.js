@@ -581,11 +581,11 @@
             await window.HumanTyping.type(inputField, text, { minDelay: 20, maxDelay: 50 });
           } catch (e) {
             console.error('[SuggestionInjector] Erro ao digitar:', e);
-            // Fallback: inserção direta
-            inputField.textContent = text;
           }
-        } else {
-          // Fallback: inserção direta
+        }
+        
+        // Se ainda não há texto (HumanTyping falhou ou não disponível), usar inserção direta
+        if (!inputField.textContent || inputField.textContent.length === 0) {
           inputField.textContent = text;
         }
       }
