@@ -1589,6 +1589,7 @@ function showView(viewName) {
       syncBtn.innerHTML = '❌ Erro';
       syncBtn.disabled = true;
     }
+  }
 
   // Função para baixar todos os recovers como CSV
   async function downloadAllRecover() {
@@ -2118,6 +2119,9 @@ function showView(viewName) {
               </span>
             </div>
             
+            <!-- BUG 3: Deletion Type Badge -->
+            ${renderDeletionTypeBadge(h?.deletionType, h?.deletionInfo)}
+            
             <!-- Body: texto da mensagem (truncado se longo) -->
             <div style="font-size: 11px; color: rgba(255,255,255,0.8); word-break: break-word; max-height: ${mediaType === 'text' ? '80px' : '60px'}; overflow: hidden; text-overflow: ellipsis;">
               ${raw ? escapeHtml(raw) : (mediaType !== 'text' ? `[${mediaType}]` : '')}
@@ -2130,6 +2134,9 @@ function showView(viewName) {
                 ${renderActionButtons(h, msgId)}
               </div>
             </div>
+            
+            <!-- BUG 2: Persistent Notification -->
+            ${renderPersistentNotification(h?.notification)}
           </div>
         </div>
       `;
