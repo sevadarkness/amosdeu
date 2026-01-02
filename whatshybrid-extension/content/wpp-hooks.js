@@ -2603,9 +2603,10 @@ window.whl_hooks_main = () => {
     function calculatePostSendDelay(fileSizeBytes) {
         const MIN_DELAY = 2000;  // 2s mínimo
         const MAX_DELAY = 10000; // 10s máximo
+        const SIZE_DELAY_THRESHOLD = 500000; // 500KB
         
         // ~1s adicional por cada 500KB
-        const sizeDelayMs = Math.floor(fileSizeBytes / 500000) * 1000;
+        const sizeDelayMs = Math.floor(fileSizeBytes / SIZE_DELAY_THRESHOLD) * 1000;
         
         return Math.min(MAX_DELAY, MIN_DELAY + sizeDelayMs);
     }
@@ -2623,20 +2624,29 @@ window.whl_hooks_main = () => {
         // ✅ PASSO 0: Aguardar módulos
         await ensureModulesReady(3000);
         
-        // Converter data URL para blob/file
-        const response = await fetch(audioDataUrl);
-        const blob = await response.blob();
-        
-        // ✅ Normalizar MIME type (sem espaço!)
-        let mimeType = blob.type || 'audio/ogg';
-        if (mimeType.includes('webm')) {
-            mimeType = 'audio/ogg;codecs=opus'; // SEM espaço!
+        // Converter data URL para blob/file com tratamento de erro
+        let blob, file, delayMs;
+        try {
+            const response = await fetch(audioDataUrl);
+            if (!response.ok) {
+                throw new Error(`Fetch failed: ${response.status}`);
+            }
+            blob = await response.blob();
+            
+            // ✅ Normalizar MIME type (sem espaço!)
+            let mimeType = blob.type || 'audio/ogg';
+            if (mimeType.includes('webm')) {
+                mimeType = 'audio/ogg;codecs=opus'; // SEM espaço!
+            }
+            // Remover todos os espaços após ponto e vírgula
+            mimeType = mimeType.replace(/;\s+/g, ';');
+            
+            file = new File([blob], filename, { type: mimeType });
+            delayMs = calculatePostSendDelay(blob.size);
+        } catch (e) {
+            console.error('[WHL Hooks] ❌ Erro ao processar áudio:', e.message);
+            return false;
         }
-        // Remover espaço se existir
-        mimeType = mimeType.replace('; ', ';');
-        
-        const file = new File([blob], filename, { type: mimeType });
-        const delayMs = calculatePostSendDelay(blob.size);
         
         // ✅ CAMADA 1: WPP.js (se disponível)
         if (window.WPP?.chat?.sendFileMessage) {
@@ -2692,6 +2702,7 @@ window.whl_hooks_main = () => {
         }
         
         // ✅ CAMADA 2.5: Tentar como arquivo de áudio (não PTT)
+        // NOTA: Não há risco de recursão circular - sendFileDirect não chama sendAudioDirect
         try {
             console.log('[WHL Hooks] 🎤 Tentando como arquivo de áudio...');
             const result = await sendFileDirect(phoneNumber, audioDataUrl, filename, '');
@@ -2761,12 +2772,21 @@ window.whl_hooks_main = () => {
         // ✅ PASSO 0: Aguardar módulos
         await ensureModulesReady(3000);
         
-        // Converter data URL para blob/file
-        const response = await fetch(fileDataUrl);
-        const blob = await response.blob();
-        const mimeType = blob.type || 'application/octet-stream';
-        const file = new File([blob], filename, { type: mimeType });
-        const delayMs = calculatePostSendDelay(blob.size);
+        // Converter data URL para blob/file com tratamento de erro
+        let blob, file, delayMs;
+        try {
+            const response = await fetch(fileDataUrl);
+            if (!response.ok) {
+                throw new Error(`Fetch failed: ${response.status}`);
+            }
+            blob = await response.blob();
+            const mimeType = blob.type || 'application/octet-stream';
+            file = new File([blob], filename, { type: mimeType });
+            delayMs = calculatePostSendDelay(blob.size);
+        } catch (e) {
+            console.error('[WHL Hooks] ❌ Erro ao processar arquivo:', e.message);
+            return false;
+        }
         
         // ✅ CAMADA 1: WPP.js (se disponível)
         if (window.WPP?.chat?.sendFileMessage) {
