@@ -1407,7 +1407,10 @@ window.whl_hooks_main = () => {
     
     /**
      * BUG 3: Detect type of deletion/revoke
-     * Returns: 'revoked_by_sender' | 'deleted_locally' | 'deleted_by_admin' | 'unknown'
+     * 
+     * @param {Object} msg - The message object
+     * @param {Object} event - Optional event data with additional context
+     * @returns {string} Type of deletion: 'revoked_by_sender', 'deleted_locally', 'deleted_by_admin', or 'unknown'
      */
     function detectDeletionType(msg, event) {
         try {
@@ -1429,13 +1432,27 @@ window.whl_hooks_main = () => {
                 return 'deleted_locally';
             }
             
-            // Check if deleted by admin in group
+            // Check if deleted by admin in group (enhanced validation)
             if (msg.isGroup || msg.chat?.isGroup) {
                 const author = extractPhoneNumber(msg.author || event?.author);
                 const sender = extractPhoneNumber(msg.from || msg.sender);
                 
+                // Additional validation: check if this is a deletion event specifically
+                // and if author has different permissions (is admin)
                 if (author && sender && author !== sender) {
-                    return 'deleted_by_admin';
+                    // Check if event is specifically a message deletion by admin
+                    if (event?.type === 'admin_delete' || event?.subtype === 'admin_revoke') {
+                        return 'deleted_by_admin';
+                    }
+                    
+                    // Check if message has admin metadata
+                    if (msg.adminDelete || event?.adminDelete) {
+                        return 'deleted_by_admin';
+                    }
+                    
+                    // If author is different but no admin indicator, treat as third-party delete
+                    // This avoids false positives with forwarded messages
+                    return 'unknown';
                 }
             }
             

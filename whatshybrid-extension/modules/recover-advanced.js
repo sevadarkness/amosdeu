@@ -857,6 +857,10 @@
   /**
    * BUG 1 SOLUTION: Download real media content, not just thumbnail
    * Implements DOM traversal + Store API + Backend fallback
+   * 
+   * @param {string} messageId - The ID of the message to download media from
+   * @param {string} mediaType - Type of media (image, video, audio, document, etc.)
+   * @returns {Promise<Object>} Result object with success flag, data, and method used
    */
   async function downloadRealMedia(messageId, mediaType) {
     console.log('[RecoverAdvanced] 🔽 Downloading real media for:', messageId, mediaType);
@@ -879,11 +883,11 @@
                             previousSibling.querySelector('[data-testid="download"]');
           
           if (downloadBtn) {
-            // Step 4: Click and wait for download
-            console.log('[RecoverAdvanced] Found download button, clicking...');
+            // Step 4: Click download button
+            console.log('[RecoverAdvanced] Found download button, triggering download...');
             downloadBtn.click();
-            await waitForDownload();
-            return { success: true, method: 'dom_click' };
+            // Note: Actual download is handled by browser
+            return { success: true, method: 'dom_click', message: 'Download triggered' };
           }
         }
       }
@@ -909,23 +913,9 @@
   }
   
   /**
-   * Helper: Wait for download to complete
-   */
-  function waitForDownload(timeout = 5000) {
-    return new Promise((resolve) => {
-      const startTime = Date.now();
-      const checkInterval = setInterval(() => {
-        // Check if download started (this is a placeholder - actual implementation depends on browser)
-        if (Date.now() - startTime > timeout) {
-          clearInterval(checkInterval);
-          resolve(true);
-        }
-      }, 500);
-    });
-  }
-  
-  /**
    * Helper: Download media from Store message object
+   * @param {Object} msg - WhatsApp message object from Store
+   * @returns {Promise<Object>} Result object with success flag, data, and method used
    */
   async function downloadMediaFromStore(msg) {
     try {
@@ -1907,13 +1897,20 @@
       // Step 4: Fallback - try HTTP health check
       try {
         const baseUrl = window.BackendClient?.getBaseUrl?.() || CONFIG.BACKEND_URL;
+        
+        // Use AbortController for timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
         const response = await fetch(`${baseUrl}/api/health`, {
           headers: { 
             'Authorization': `Bearer ${token}`,
             'Content-Type': 'application/json'
           },
-          timeout: 5000
+          signal: controller.signal
         });
+        
+        clearTimeout(timeoutId);
         
         if (response.ok) {
           console.log('[RecoverAdvanced] Backend reachable via HTTP');
@@ -2124,12 +2121,18 @@
   
   /**
    * BUG 7: Process and deduplicate messages
+   * @param {Array} messages - Array of messages to process
+   * @returns {Promise<Array>} Deduplicated array of messages
    */
   async function processAndDeduplicate(messages) {
     const unique = new Map();
     
     for (const msg of messages) {
-      const key = `${msg.id}_${msg.from}_${msg.timestamp}`;
+      // Use robust key with fallbacks for undefined values
+      const timestamp = msg.timestamp || Date.now();
+      const from = msg.from || 'unknown';
+      const id = msg.id || `generated_${Date.now()}_${Math.random()}`;
+      const key = `${id}_${from}_${timestamp}`;
       
       if (!unique.has(key)) {
         unique.set(key, msg);
