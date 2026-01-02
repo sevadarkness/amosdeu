@@ -23,6 +23,42 @@
   };
 
   // ============================================
+  // PHASE 1: CORE MESSAGE VERSIONS
+  // ============================================
+  
+  // Estrutura principal de versões por mensagem
+  const messageVersions = new Map();
+
+  // Modelo de estados
+  const MESSAGE_STATES = {
+    NORMAL: 'normal',
+    CREATED: 'created',
+    EDITED: 'edited',
+    REVOKED_GLOBAL: 'revoked_global',
+    DELETED_LOCAL: 'deleted_local',
+    FAILED: 'failed',
+    CACHED_ONLY: 'cached_only',
+    SNAPSHOT_INITIAL: 'snapshot_initial',
+    SNAPSHOT_LOADED: 'snapshot_loaded',
+    REMOVED: 'removed',
+    STATUS_PUBLISHED: 'status_published',
+    STATUS_DELETED: 'status_deleted'
+  };
+
+  // Estados que compõem o "Universo Revogado"
+  const REVOKED_UNIVERSE_STATES = [
+    MESSAGE_STATES.DELETED_LOCAL,
+    MESSAGE_STATES.REVOKED_GLOBAL,
+    MESSAGE_STATES.EDITED,
+    MESSAGE_STATES.FAILED,
+    MESSAGE_STATES.CACHED_ONLY,
+    MESSAGE_STATES.STATUS_DELETED,
+    MESSAGE_STATES.SNAPSHOT_INITIAL,
+    MESSAGE_STATES.SNAPSHOT_LOADED,
+    MESSAGE_STATES.REMOVED
+  ];
+
+  // ============================================
   // ESTADO
   // ============================================
   const state = {
@@ -33,11 +69,16 @@
       type: 'all',      // all, revoked, deleted, edited, media
       chat: null,       // filtrar por número
       dateFrom: null, 
-      dateTo: null 
+      dateTo: null,
+      direction: 'all', // PHASE 2: all, incoming, outgoing, third_party
+      state: 'all'      // PHASE 2: all, revoked_global, deleted_local, edited, revoked_universe
     },
     page: 0,
     initialized: false
   };
+
+  // PHASE 2: Variável global para armazenar o owner (meu número)
+  let cachedOwner = null;
 
   // ============================================
   // 8.12 - CACHE LRU INTELIGENTE
@@ -94,8 +135,14 @@
     await loadFromStorage();
     setupEventListeners();
     
+    // PHASE 1: Migrar mensagens antigas para novo sistema
+    if (state.messages.length > 0) {
+      migrateFromLegacy(state.messages);
+    }
+    
     state.initialized = true;
     console.log('[RecoverAdvanced] ✅ Inicializado -', state.messages.length, 'mensagens carregadas');
+    console.log('[RecoverAdvanced] ✅ messageVersions:', messageVersions.size, 'entradas');
   }
 
   async function loadFromStorage() {
@@ -204,6 +251,107 @@
   }
 
   // ============================================
+  // PHASE 1: MESSAGE VERSIONS REGISTRY
+  // ============================================
+  
+  function registerMessageEvent(msgData, state, origin = 'unknown') {
+    const id = msgData.id || msgData.msgId || Date.now().toString();
+    
+    if (!messageVersions.has(id)) {
+      // Criar nova entrada
+      messageVersions.set(id, {
+        id,
+        chatId: msgData.chatId || msgData.chat || extractChatId(msgData),
+        from: extractPhoneNumber(msgData.from || msgData.author || msgData.sender),
+        to: extractPhoneNumber(msgData.to || msgData.chatId),
+        type: msgData.type || 'chat',
+        direction: determineDirection(msgData),
+        owner: getOwner(),
+        history: []
+      });
+    }
+    
+    const entry = messageVersions.get(id);
+    
+    // Adicionar evento ao histórico
+    entry.history.push({
+      state,
+      body: msgData.body || msgData.text || msgData.caption || '',
+      previousBody: msgData.previousBody || msgData.previousContent || null,
+      mediaType: msgData.mediaType || msgData.mimetype || null,
+      mediaDataPreview: msgData.mediaDataPreview || msgData.thumbnail || null,
+      mediaDataFull: null, // Só preenchido quando usuário solicitar
+      transcription: msgData.transcription || null,
+      timestamp: msgData.timestamp || Date.now(),
+      origin,
+      capturedAt: Date.now()
+    });
+    
+    // Atualizar campos principais se necessário
+    if (msgData.from) entry.from = extractPhoneNumber(msgData.from);
+    if (msgData.to) entry.to = extractPhoneNumber(msgData.to);
+    if (msgData.type) entry.type = msgData.type;
+    
+    return entry;
+  }
+
+  // Obter histórico completo de uma mensagem
+  function getMessageHistory(id) {
+    return messageVersions.get(id) || null;
+  }
+
+  // Obter estado atual (último estado no histórico)
+  function getCurrentState(id) {
+    const entry = messageVersions.get(id);
+    if (!entry || entry.history.length === 0) return null;
+    return entry.history[entry.history.length - 1].state;
+  }
+
+  // Verificar se mensagem está no "Universo Revogado"
+  function isInRevokedUniverse(id) {
+    const entry = messageVersions.get(id);
+    if (!entry) return false;
+    return entry.history.some(h => REVOKED_UNIVERSE_STATES.includes(h.state));
+  }
+
+  // Obter todas as mensagens do Universo Revogado
+  function getRevokedUniverseMessages() {
+    const result = [];
+    messageVersions.forEach((entry, id) => {
+      if (isInRevokedUniverse(id)) {
+        result.push(entry);
+      }
+    });
+    return result;
+  }
+
+  // ============================================
+  // PHASE 1: LEGACY MIGRATION
+  // ============================================
+  
+  function mapLegacyActionToState(action) {
+    const mapping = {
+      'revoked': MESSAGE_STATES.REVOKED_GLOBAL,
+      'deleted': MESSAGE_STATES.DELETED_LOCAL,
+      'edited': MESSAGE_STATES.EDITED,
+      'failed': MESSAGE_STATES.FAILED
+    };
+    return mapping[action] || MESSAGE_STATES.CACHED_ONLY;
+  }
+
+  // Migrar mensagens do formato antigo (array plano) para messageVersions
+  function migrateFromLegacy(legacyMessages) {
+    if (!Array.isArray(legacyMessages)) return;
+    
+    legacyMessages.forEach(msg => {
+      const state = mapLegacyActionToState(msg.action);
+      registerMessageEvent(msg, state, 'legacy_migration');
+    });
+    
+    console.log(`[RecoverAdvanced] Migrados ${legacyMessages.length} registros do formato antigo`);
+  }
+
+  // ============================================
   // 6.1-6.7 - CAPTURA DE MENSAGENS
   // ============================================
   async function handleNewMessage(data) {
@@ -245,7 +393,15 @@
       msg.mediaData = await compressMedia(msg.mediaData, msg.type);
     }
 
-    // Adicionar ao início (mais recente primeiro)
+    // PHASE 1: Registrar no novo sistema de versões
+    const messageState = mapLegacyActionToState(msg.action);
+    registerMessageEvent({
+      ...data,
+      ...msg,
+      mediaDataPreview: msg.mediaData
+    }, messageState, 'handle_new_message');
+
+    // Adicionar ao início (mais recente primeiro) - MANTER COMPATIBILIDADE
     state.messages.unshift(msg);
     
     // Manter limite
@@ -269,33 +425,208 @@
   }
 
   // ============================================
-  // 6.13-6.15 - EXTRAÇÃO DE TELEFONE
+  // PHASE 2: ENHANCED PHONE EXTRACTION
   // ============================================
-  function extractPhone(value) {
-    if (!value) return 'Desconhecido';
-    
-    let phone = value;
-    
-    // Se for objeto
-    if (typeof value === 'object') {
-      phone = value._serialized || value.user || value.id || String(value);
-    }
-    
-    // Converter para string
-    phone = String(phone);
+  
+  function cleanPhoneNumber(phone) {
+    if (!phone || typeof phone !== 'string') return '';
     
     // Remover sufixos do WhatsApp
-    phone = phone.replace(/@[cs]\.us$/i, '')
-                 .replace(/@g\.us$/i, '')
-                 .replace(/@broadcast$/i, '');
+    let cleaned = phone
+      .replace(/@c\.us$/i, '')
+      .replace(/@s\.whatsapp\.net$/i, '')
+      .replace(/@g\.us$/i, '')
+      .replace(/@broadcast$/i, '')
+      .replace(/@lid$/i, '')
+      .replace(/@newsletter$/i, '');
     
     // Manter apenas números
-    phone = phone.replace(/\D/g, '');
+    cleaned = cleaned.replace(/\D/g, '');
     
-    // Se vazio, retornar desconhecido
-    if (!phone || phone.length < 8) return 'Desconhecido';
+    return cleaned;
+  }
+
+  function isValidPhoneNumber(phone) {
+    if (!phone || typeof phone !== 'string') return false;
+    // Número válido: 8-15 dígitos
+    return phone.length >= 8 && phone.length <= 15 && /^\d+$/.test(phone);
+  }
+
+  function extractPhoneNumber(value) {
+    if (!value) return 'Desconhecido';
     
-    return phone;
+    // Lista de campos a tentar (em ordem de prioridade)
+    const fieldsToTry = [
+      // Direto
+      () => value,
+      // Objeto com _serialized
+      () => value?._serialized,
+      () => value?.user,
+      () => value?.id,
+      // Campos específicos
+      () => value?.to,
+      () => value?.to?._serialized,
+      () => value?.to?.user,
+      () => value?.from,
+      () => value?.from?._serialized,
+      () => value?.from?.user,
+      // Chat
+      () => value?.chat?.id?.user,
+      () => value?.chat?.id?._serialized,
+      () => value?.chat?.contact?.id?.user,
+      () => value?.chat?.contact?.number,
+      // ID
+      () => value?.id?.remote?.user,
+      () => value?.id?.remote?._serialized,
+      () => value?.id?.participant?.user,
+      () => value?.id?.participant?._serialized,
+      // Author
+      () => value?.author,
+      () => value?.author?._serialized,
+      () => value?.author?.user,
+      // Sender
+      () => value?.sender,
+      () => value?.sender?._serialized,
+      () => value?.phoneNumber,
+      () => value?.number
+    ];
+    
+    for (const getter of fieldsToTry) {
+      try {
+        const result = getter();
+        if (result && typeof result === 'string') {
+          const cleaned = cleanPhoneNumber(result);
+          if (isValidPhoneNumber(cleaned)) {
+            return cleaned;
+          }
+        }
+      } catch (e) {
+        continue;
+      }
+    }
+    
+    // Fallback: tentar converter objeto para string
+    if (typeof value === 'object') {
+      const str = String(value);
+      const cleaned = cleanPhoneNumber(str);
+      if (isValidPhoneNumber(cleaned)) {
+        return cleaned;
+      }
+    }
+    
+    return 'Desconhecido';
+  }
+
+  // ============================================
+  // 6.13-6.15 - EXTRAÇÃO DE TELEFONE (LEGACY)
+  // ============================================
+  function extractPhone(value) {
+    // Backward compatibility: use new extractPhoneNumber
+    return extractPhoneNumber(value);
+  }
+
+  // ============================================
+  // PHASE 2: DIRECTION AND OWNER DETECTION
+  // ============================================
+  
+  function getOwner() {
+    if (cachedOwner) return cachedOwner;
+    
+    try {
+      // Tentar obter do Store
+      if (window.Store?.Conn?.me) {
+        cachedOwner = cleanPhoneNumber(window.Store.Conn.me);
+        return cachedOwner;
+      }
+      
+      // Tentar do localStorage
+      const stored = localStorage.getItem('last-wid-md') || localStorage.getItem('last-wid');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        cachedOwner = cleanPhoneNumber(parsed);
+        return cachedOwner;
+      }
+      
+      // Tentar do DOM
+      const profileEl = document.querySelector('[data-testid="chatlist-header"] img');
+      if (profileEl?.src) {
+        const match = profileEl.src.match(/u=(\d+)/);
+        if (match) {
+          cachedOwner = match[1];
+          return cachedOwner;
+        }
+      }
+    } catch (e) {
+      console.warn('[RecoverAdvanced] Erro ao detectar owner:', e);
+    }
+    
+    return null;
+  }
+
+  function mentionsOwner(msg, owner) {
+    if (!msg || !owner) return false;
+    
+    // Verificar menções
+    if (msg.mentionedJidList) {
+      return msg.mentionedJidList.some(jid => 
+        cleanPhoneNumber(jid) === owner
+      );
+    }
+    
+    // Verificar quotedMsg (resposta a mim)
+    if (msg.quotedMsg || msg.quotedStanzaID) {
+      const quotedFrom = extractPhoneNumber(msg.quotedMsg?.from || msg.quotedParticipant);
+      if (quotedFrom === owner) return true;
+    }
+    
+    return false;
+  }
+
+  function determineDirection(msg) {
+    const owner = getOwner();
+    if (!owner) return 'unknown';
+    
+    const from = extractPhoneNumber(msg.from || msg.author || msg.sender);
+    const to = extractPhoneNumber(msg.to || msg.chatId);
+    
+    // Mensagem enviada por mim
+    if (msg.fromMe === true || from === owner) {
+      return 'outgoing';
+    }
+    
+    // Mensagem destinada a mim (chat privado ou menção)
+    if (to === owner || mentionsOwner(msg, owner)) {
+      return 'incoming';
+    }
+    
+    // Mensagem entre terceiros (em grupo/comunidade)
+    return 'third_party';
+  }
+
+  function extractChatId(msg) {
+    if (!msg) return null;
+    
+    // Tentar várias fontes
+    const sources = [
+      msg.chatId,
+      msg.chat?.id?._serialized,
+      msg.chat?.id,
+      msg.id?.remote?._serialized,
+      msg.id?.remote,
+      msg.from?.chat,
+      msg.to
+    ];
+    
+    for (const source of sources) {
+      if (source) {
+        const cleaned = typeof source === 'string' ? source : source?._serialized || String(source);
+        if (cleaned && cleaned.includes('@')) {
+          return cleaned;
+        }
+      }
+    }
+    
+    return null;
   }
 
   // ============================================
@@ -917,6 +1248,12 @@
       state.filters.dateFrom = value ? new Date(value).getTime() : null;
     } else if (type === 'dateTo') {
       state.filters.dateTo = value ? new Date(value).getTime() : null;
+    } else if (type === 'direction') {
+      // PHASE 2: Filtro de direção
+      state.filters.direction = value || 'all';
+    } else if (type === 'state') {
+      // PHASE 2: Filtro de estado
+      state.filters.state = value || 'all';
     }
     
     state.page = 0; // Reset página ao mudar filtro
@@ -940,6 +1277,28 @@
         filtered = filtered.filter(m => state.favorites.has(m.id));
       } else {
         filtered = filtered.filter(m => m.action === state.filters.type);
+      }
+    }
+
+    // PHASE 2: Filtro por direção
+    if (state.filters.direction !== 'all') {
+      filtered = filtered.filter(m => {
+        // Calcular direção se não estiver armazenada
+        const msgDirection = m.direction || determineDirection(m);
+        return msgDirection === state.filters.direction;
+      });
+    }
+
+    // PHASE 2: Filtro por estado (verifica histórico no messageVersions)
+    if (state.filters.state !== 'all') {
+      if (state.filters.state === 'revoked_universe') {
+        filtered = filtered.filter(m => isInRevokedUniverse(m.id));
+      } else {
+        filtered = filtered.filter(m => {
+          const entry = messageVersions.get(m.id);
+          if (!entry) return false;
+          return entry.history.some(h => h.state === state.filters.state);
+        });
       }
     }
 
@@ -1016,6 +1375,24 @@
     getMessages: () => [...state.messages],
     getFilteredMessages,
     addMessage: handleNewMessage,
+    
+    // PHASE 1: Message Versions API
+    registerMessageEvent,
+    getMessageHistory,
+    getCurrentState,
+    isInRevokedUniverse,
+    getRevokedUniverseMessages,
+    messageVersions: messageVersions, // Direct access for advanced use
+    MESSAGE_STATES,
+    REVOKED_UNIVERSE_STATES,
+    
+    // PHASE 2: Enhanced extraction and direction
+    extractPhoneNumber,
+    cleanPhoneNumber,
+    isValidPhoneNumber,
+    getOwner,
+    determineDirection,
+    extractChatId,
     
     // Paginação
     getPage,
