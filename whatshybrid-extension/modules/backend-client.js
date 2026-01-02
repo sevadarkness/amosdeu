@@ -642,7 +642,7 @@
   }
 
   // ============================================
-  // SINCRONIZAÇÃO EM TEMPO REAL (v7.5.0)
+  // SINCRONIZAÇÃO EM TEMPO REAL
   // ============================================
   
   // Sincronização de Contatos via Socket
@@ -735,7 +735,7 @@
     syncContacts,
     syncAll,
     
-    // Real-time Sync (v7.5.0)
+    // Real-time Sync
     syncContactsRealtime,
     syncDealsRealtime,
     syncTasksRealtime,
