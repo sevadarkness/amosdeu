@@ -2341,7 +2341,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     // 4. Polling fallback - verificar a cada 3 segundos
-    setInterval(() => {
+    // CODE REVIEW FIX: Store interval ID for cleanup
+    if (window._recoverPollingInterval) {
+      clearInterval(window._recoverPollingInterval);
+    }
+    
+    window._recoverPollingInterval = setInterval(() => {
+      // Only poll if recover view is active
+      const recoverView = document.getElementById('whlViewRecover');
+      if (!recoverView || recoverView.classList.contains('hidden')) {
+        return;
+      }
+      
       const currentCount = window.RecoverAdvanced?.getMessages?.()?.length || 0;
       const displayedTotalEl = document.getElementById('sp_recover_total');
       const displayedCount = parseInt(displayedTotalEl?.textContent || '0');

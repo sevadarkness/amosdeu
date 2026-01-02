@@ -1646,10 +1646,14 @@ function showView(viewName) {
     const slice = (history || []).slice(-MAX_RECOVER_RENDER).reverse();
     
     // BUG FIX #7: ANTI-DUPLICAÇÃO - Usar Set para rastrear mensagens já renderizadas
+    // CODE REVIEW FIX: Use named constants for magic numbers
+    const DEDUP_BODY_LENGTH = 50; // Characters to use for deduplication key
+    const DEDUP_TIME_WINDOW_MS = 5000; // 5 seconds time window for deduplication
+    
     const renderedSet = new Set();
     const uniqueMessages = slice.filter(h => {
-      // Criar chave única baseada em: from + to + body (truncado) + timestamp (arredondado para 5s)
-      const key = `${h?.from || ''}_${h?.to || ''}_${(h?.body || '').substring(0, 50)}_${Math.floor((h?.timestamp || 0) / 5000)}`;
+      // Criar chave única baseada em: from + to + body (truncado) + timestamp (arredondado)
+      const key = `${h?.from || ''}_${h?.to || ''}_${(h?.body || '').substring(0, DEDUP_BODY_LENGTH)}_${Math.floor((h?.timestamp || 0) / DEDUP_TIME_WINDOW_MS)}`;
       
       if (renderedSet.has(key)) {
         return false; // Duplicata, ignorar
@@ -1675,6 +1679,16 @@ function showView(viewName) {
     
     const toDataUrl = (content, mimetype) => {
       if (!content) return null;
+      // CODE REVIEW FIX: Basic validation for media data
+      if (typeof content !== 'string') return null;
+      
+      // Check size limit (max 10MB base64 string)
+      const MAX_MEDIA_SIZE = 10 * 1024 * 1024;
+      if (content.length > MAX_MEDIA_SIZE) {
+        console.warn('[Recover] Media data too large:', content.length);
+        return null;
+      }
+      
       if (content.startsWith('data:')) return content;
       if (content.startsWith('/9j/')) return `data:image/jpeg;base64,${content}`;
       if (content.startsWith('iVBOR')) return `data:image/png;base64,${content}`;
@@ -1878,7 +1892,8 @@ function showView(viewName) {
       
       const action = btn.dataset.action;
       const id = btn.dataset.id;
-      const msg = uniqueMessages.find(m => (m.id || uniqueMessages.indexOf(m)) == id);
+      // CODE REVIEW FIX: Use strict equality for ID comparison
+      const msg = uniqueMessages.find(m => (m.id || uniqueMessages.indexOf(m)) === id || String(m.id) === String(id));
       
       switch(action) {
         case 'copy':
@@ -1952,19 +1967,31 @@ function showView(viewName) {
   }
   
   // Helper para mostrar toast
+  // CODE REVIEW FIX: Prevent memory leaks from multiple toasts
+  let toastTimeout = null;
+  
   function showToast(message) {
     // Remover toast antigo se existir
     const oldToast = document.querySelector('.recover-toast');
     if (oldToast) oldToast.remove();
+    
+    // Clear previous timeout
+    if (toastTimeout) {
+      clearTimeout(toastTimeout);
+      toastTimeout = null;
+    }
     
     const toast = document.createElement('div');
     toast.className = 'recover-toast';
     toast.textContent = message;
     document.body.appendChild(toast);
     
-    setTimeout(() => {
+    toastTimeout = setTimeout(() => {
       toast.style.opacity = '0';
-      setTimeout(() => toast.remove(), 300);
+      setTimeout(() => {
+        toast.remove();
+        toastTimeout = null;
+      }, 300);
     }, 3000);
   }
 
@@ -3132,6 +3159,7 @@ function showView(viewName) {
   window.recoverRefresh = recoverRefresh;
   window.showView = showView;  // Exposed for debug
   window.renderRecoverTimeline = renderRecoverTimeline;
+  window.showToast = showToast; // Expose toast helper globally
 
 
   // ========= Fallback: Verificação periódica de view =========
