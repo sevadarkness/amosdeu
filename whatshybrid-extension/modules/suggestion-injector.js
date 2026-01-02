@@ -569,24 +569,33 @@
     inputField.focus();
 
     if (!focusOnly) {
-      // Insere o texto
+      // Limpar completamente o campo ANTES de inserir
       inputField.innerHTML = '';
+      inputField.textContent = '';
       
-      // Método 1: execCommand (funciona na maioria dos casos)
-      document.execCommand('insertText', false, text);
-
-      // Se não funcionou, tenta método alternativo
-      if (!inputField.textContent || inputField.textContent.length === 0) {
-        // v7.5.0: Usar digitação humana
-    if (window.HumanTyping && typeof window.HumanTyping.type === 'function') {
-      inputField.innerHTML = '';
-      // Usar promise sem await (função não é async)
-      window.HumanTyping.type(inputField, text, { minDelay: 20, maxDelay: 50 })
-        .catch(e => console.error('[SuggestionInjector] Erro ao digitar:', e));
-    } else {
-      inputField.textContent = text;
-    }
-        inputField.dispatchEvent(new InputEvent('input', { bubbles: true }));
+      // Força re-render
+      inputField.dispatchEvent(new Event('input', { bubbles: true }));
+      
+      // Aguardar um pouco para garantir que o campo está limpo
+      await new Promise(resolve => setTimeout(resolve, 50));
+      
+      // Tentar apenas UMA vez com o melhor método disponível
+      let inserted = false;
+      
+      // Método 1 (preferencial): HumanTyping se disponível
+      if (window.HumanTyping && typeof window.HumanTyping.type === 'function') {
+        try {
+          await window.HumanTyping.type(inputField, text, { minDelay: 20, maxDelay: 50 });
+          inserted = true;
+        } catch (e) {
+          console.error('[SuggestionInjector] Erro ao digitar com HumanTyping:', e);
+        }
+      }
+      
+      // Método 2 (fallback): execCommand
+      if (!inserted) {
+        document.execCommand('insertText', false, text);
+        inserted = true;
       }
 
       // Move cursor para o final
