@@ -259,12 +259,18 @@
   
   console.log('\n======================');
   console.log(`Total tests: ${tests.length}`);
-  console.log(`✅ Passed: ${passed}`);
-  console.log(`❌ Failed: ${failed}`);
-  console.log(`Success rate: ${((passed / tests.length) * 100).toFixed(1)}%`);
+  if (tests.length > 0) {
+    console.log(`✅ Passed: ${passed}`);
+    console.log(`❌ Failed: ${failed}`);
+    console.log(`Success rate: ${((passed / tests.length) * 100).toFixed(1)}%`);
+  } else {
+    console.log('⚠️ No tests were run!');
+  }
   console.log('======================\n');
   
-  if (failed === 0) {
+  if (tests.length === 0) {
+    console.log('❌ No tests found or executed!');
+  } else if (failed === 0) {
     console.log('🎉 All tests passed!');
   } else {
     console.log('⚠️ Some tests failed. Check details above.');
@@ -275,7 +281,7 @@
     total: tests.length,
     passed,
     failed,
-    successRate: (passed / tests.length) * 100,
+    successRate: tests.length > 0 ? (passed / tests.length) * 100 : 0,
     tests
   };
 })();

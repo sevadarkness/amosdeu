@@ -74,11 +74,9 @@
       state: 'all'      // PHASE 2: all, revoked_global, deleted_local, edited, revoked_universe
     },
     page: 0,
-    initialized: false
+    initialized: false,
+    cachedOwner: null // PHASE 2: Cache do owner para evitar múltiplas detecções
   };
-
-  // PHASE 2: Variável global para armazenar o owner (meu número)
-  let cachedOwner = null;
 
   // ============================================
   // 8.12 - CACHE LRU INTELIGENTE
@@ -163,7 +161,14 @@
       
       // Carregar histórico
       let saved = result[CONFIG.STORAGE_KEY];
-      if (typeof saved === 'string') saved = JSON.parse(saved);
+      if (typeof saved === 'string') {
+        try {
+          saved = JSON.parse(saved);
+        } catch (e) {
+          console.warn('[RecoverAdvanced] Erro ao parsear dados salvos:', e);
+          saved = null;
+        }
+      }
       if (Array.isArray(saved)) {
         // CORREÇÃO 4.1: Aplicar análise de sentimento ao carregar mensagens
         state.messages = saved.slice(0, CONFIG.MAX_MESSAGES).map(m => ({
@@ -174,14 +179,28 @@
       
       // Carregar favoritos
       let favs = result[CONFIG.FAVORITES_KEY];
-      if (typeof favs === 'string') favs = JSON.parse(favs);
+      if (typeof favs === 'string') {
+        try {
+          favs = JSON.parse(favs);
+        } catch (e) {
+          console.warn('[RecoverAdvanced] Erro ao parsear favoritos:', e);
+          favs = null;
+        }
+      }
       if (Array.isArray(favs)) {
         state.favorites = new Set(favs);
       }
       
       // Carregar configurações de notificações por contato
       let notifs = result[CONFIG.NOTIFICATIONS_KEY];
-      if (typeof notifs === 'string') notifs = JSON.parse(notifs);
+      if (typeof notifs === 'string') {
+        try {
+          notifs = JSON.parse(notifs);
+        } catch (e) {
+          console.warn('[RecoverAdvanced] Erro ao parsear notificações:', e);
+          notifs = null;
+        }
+      }
       if (Array.isArray(notifs)) {
         state.contactNotifications = new Set(notifs);
       }
@@ -530,21 +549,25 @@
   // ============================================
   
   function getOwner() {
-    if (cachedOwner) return cachedOwner;
+    if (state.cachedOwner) return state.cachedOwner;
     
     try {
       // Tentar obter do Store
       if (window.Store?.Conn?.me) {
-        cachedOwner = cleanPhoneNumber(window.Store.Conn.me);
-        return cachedOwner;
+        state.cachedOwner = cleanPhoneNumber(window.Store.Conn.me);
+        return state.cachedOwner;
       }
       
       // Tentar do localStorage
       const stored = localStorage.getItem('last-wid-md') || localStorage.getItem('last-wid');
       if (stored) {
-        const parsed = JSON.parse(stored);
-        cachedOwner = cleanPhoneNumber(parsed);
-        return cachedOwner;
+        try {
+          const parsed = JSON.parse(stored);
+          state.cachedOwner = cleanPhoneNumber(parsed);
+          return state.cachedOwner;
+        } catch (e) {
+          console.warn('[RecoverAdvanced] Erro ao parsear owner do localStorage:', e);
+        }
       }
       
       // Tentar do DOM
@@ -552,8 +575,8 @@
       if (profileEl?.src) {
         const match = profileEl.src.match(/u=(\d+)/);
         if (match) {
-          cachedOwner = match[1];
-          return cachedOwner;
+          state.cachedOwner = match[1];
+          return state.cachedOwner;
         }
       }
     } catch (e) {
