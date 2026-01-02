@@ -2757,6 +2757,55 @@ function showView(viewName) {
     }
   }
   
+  async function saveDraft() {
+    const nameEl = $('sp_draft_name');
+    const name = (nameEl?.value || '').trim();
+    
+    if (!name) {
+      alert('⚠️ Informe o nome do template.');
+      return;
+    }
+    
+    try {
+      // Get current state from motor
+      const resp = await motor('GET_STATE', { light: false });
+      const st = resp?.state || resp;
+      
+      // Save template to storage
+      const templates = await chrome.storage.local.get('whl_templates') || {};
+      const templatesList = templates.whl_templates || [];
+      
+      const template = {
+        name: name,
+        message: st.message || '',
+        imageData: st.imageData || null,
+        queue: st.queue || [],
+        delayMin: st.delayMin || 2,
+        delayMax: st.delayMax || 6,
+        savedAt: new Date().toISOString()
+      };
+      
+      // Check if template with same name exists
+      const existingIndex = templatesList.findIndex(t => t.name === name);
+      if (existingIndex >= 0) {
+        if (!confirm(`Template "${name}" já existe. Substituir?`)) {
+          return;
+        }
+        templatesList[existingIndex] = template;
+      } else {
+        templatesList.push(template);
+      }
+      
+      await chrome.storage.local.set({ whl_templates: templatesList });
+      
+      if (nameEl) nameEl.value = '';
+      alert('✅ Template salvo com sucesso!');
+    } catch (error) {
+      console.error('[Sidepanel] Erro ao salvar template:', error);
+      alert('❌ Erro ao salvar template: ' + error.message);
+    }
+  }
+  
   async function loadNotificationSettings() {
     if (!window.notificationSystem) return;
     
@@ -3416,6 +3465,14 @@ function showView(viewName) {
   window.showView = showView;  // Exposed for debug
   window.renderRecoverTimeline = renderRecoverTimeline;
   window.showToast = showToast; // Expose toast helper globally
+  
+  // Expose dispatch and utility functions for button handlers
+  window.addSchedule = addSchedule;
+  window.saveAntiBanSettings = saveAntiBanSettings;
+  window.testNotification = testNotification;
+  window.saveDraft = saveDraft;
+  window.exportReportCSV = exportReportCSV;
+  window.copyFailedNumbers = copyFailedNumbers;
 
 
   // ========= Fallback: Verificação periódica de view =========

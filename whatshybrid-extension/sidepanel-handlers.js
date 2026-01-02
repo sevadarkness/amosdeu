@@ -177,5 +177,113 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // Dispatch settings buttons
+    document.getElementById('sp_save_settings')?.addEventListener('click', async () => {
+        const delayMin = parseFloat(document.getElementById('sp_delay_min')?.value) || 2;
+        const delayMax = parseFloat(document.getElementById('sp_delay_max')?.value) || 6;
+        
+        try {
+            await chrome.storage.local.set({
+                whl_delay_min: delayMin,
+                whl_delay_max: delayMax
+            });
+            
+            const statusEl = document.getElementById('sp_config_status');
+            if (statusEl) {
+                statusEl.textContent = '✅ Configurações salvas!';
+                setTimeout(() => statusEl.textContent = 'Pronto.', 2000);
+            }
+        } catch (error) {
+            console.error('[Sidepanel] Erro ao salvar configurações:', error);
+            alert('Erro ao salvar configurações: ' + error.message);
+        }
+    });
+
+    document.getElementById('sp_reload_settings')?.addEventListener('click', async () => {
+        try {
+            const { whl_delay_min, whl_delay_max } = await chrome.storage.local.get(['whl_delay_min', 'whl_delay_max']);
+            
+            const minEl = document.getElementById('sp_delay_min');
+            const maxEl = document.getElementById('sp_delay_max');
+            
+            if (minEl) minEl.value = whl_delay_min || 2;
+            if (maxEl) maxEl.value = whl_delay_max || 6;
+            
+            const statusEl = document.getElementById('sp_config_status');
+            if (statusEl) {
+                statusEl.textContent = '✅ Configurações recarregadas!';
+                setTimeout(() => statusEl.textContent = 'Pronto.', 2000);
+            }
+        } catch (error) {
+            console.error('[Sidepanel] Erro ao recarregar configurações:', error);
+            alert('Erro ao recarregar configurações: ' + error.message);
+        }
+    });
+
+    // Scheduler button
+    document.getElementById('sp_add_schedule')?.addEventListener('click', async () => {
+        if (window.addSchedule) {
+            await window.addSchedule();
+        } else {
+            console.warn('[Sidepanel] addSchedule function not available');
+        }
+    });
+
+    // Anti-ban buttons
+    document.getElementById('sp_save_antiban')?.addEventListener('click', async () => {
+        if (window.saveAntiBanSettings) {
+            await window.saveAntiBanSettings();
+        } else {
+            console.warn('[Sidepanel] saveAntiBanSettings function not available');
+        }
+    });
+
+    document.getElementById('sp_reset_daily_count')?.addEventListener('click', async () => {
+        if (confirm('Resetar o contador diário de mensagens?')) {
+            try {
+                await chrome.storage.local.set({ whl_daily_count: 0, whl_daily_count_date: new Date().toDateString() });
+                alert('Contador resetado!');
+            } catch (error) {
+                console.error('[Sidepanel] Erro ao resetar contador:', error);
+                alert('Erro ao resetar contador: ' + error.message);
+            }
+        }
+    });
+
+    // Notification test button
+    document.getElementById('sp_test_notification')?.addEventListener('click', async () => {
+        if (window.testNotification) {
+            await window.testNotification();
+        } else {
+            console.warn('[Sidepanel] testNotification function not available');
+        }
+    });
+
+    // Template save button
+    document.getElementById('sp_save_draft')?.addEventListener('click', async () => {
+        if (window.saveDraft) {
+            await window.saveDraft();
+        } else {
+            console.warn('[Sidepanel] saveDraft function not available');
+        }
+    });
+
+    // Report buttons
+    document.getElementById('sp_export_report')?.addEventListener('click', async () => {
+        if (window.exportReportCSV) {
+            await window.exportReportCSV();
+        } else {
+            console.warn('[Sidepanel] exportReportCSV function not available');
+        }
+    });
+
+    document.getElementById('sp_copy_failed')?.addEventListener('click', async () => {
+        if (window.copyFailedNumbers) {
+            await window.copyFailedNumbers();
+        } else {
+            console.warn('[Sidepanel] copyFailedNumbers function not available');
+        }
+    });
+
     console.log('[Sidepanel] ✅ Todos os handlers configurados');
 });
