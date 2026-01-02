@@ -94,20 +94,18 @@
                   document.querySelector('[data-testid="conversation-compose-box-input"]');
     if (!input) return;
     
-    input.focus();
+    // CORREÇÃO CRÍTICA: Limpar campo COMPLETAMENTE antes de inserir
+    input.textContent = '';
     input.innerHTML = '';
+    input.focus();
     
-    // Usar HumanTyping se disponível
-    if (window.HumanTyping?.type) {
-      window.HumanTyping.type(input, text, { minDelay: 20, maxDelay: 50 }).catch(console.error);
-    } else {
-      // Fallback
-      for (const char of text) {
-        document.execCommand('insertText', false, char);
-        await new Promise(r => setTimeout(r, Math.random() * 30 + 15));
-      }
-    }
+    // Aguardar um momento para garantir que o campo foi limpo
+    await new Promise(r => setTimeout(r, 50));
     
+    // Inserir texto UMA ÚNICA VEZ usando apenas execCommand
+    document.execCommand('insertText', false, text);
+    
+    // Dispara evento de input UMA ÚNICA VEZ
     input.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
@@ -567,29 +565,16 @@
     inputField.focus();
 
     if (!focusOnly) {
-      // CORREÇÃO: Limpar campo completamente e inserir texto UMA ÚNICA VEZ
+      // CORREÇÃO CRÍTICA: Limpar campo COMPLETAMENTE antes de inserir
+      inputField.textContent = '';
       inputField.innerHTML = '';
       
-      // Método 1: Tentar execCommand (mais compatível com WhatsApp)
-      const inserted = document.execCommand('insertText', false, text);
+      // Aguardar um momento para garantir que o campo foi limpo
+      await new Promise(resolve => setTimeout(resolve, 50));
       
-      // Se execCommand não funcionou, usar método alternativo
-      if (!inserted || !inputField.textContent || inputField.textContent.length === 0) {
-        // v7.5.0: Usar digitação humana se disponível
-        if (window.HumanTyping && typeof window.HumanTyping.type === 'function') {
-          try {
-            await window.HumanTyping.type(inputField, text, { minDelay: 20, maxDelay: 50 });
-          } catch (e) {
-            console.error('[SuggestionInjector] Erro ao digitar:', e);
-          }
-        }
-        
-        // Se ainda não há texto (HumanTyping falhou ou não disponível), usar inserção direta
-        if (!inputField.textContent || inputField.textContent.length === 0) {
-          inputField.textContent = text;
-        }
-      }
-
+      // Método ÚNICO de inserção: usar apenas execCommand para evitar duplicação
+      document.execCommand('insertText', false, text);
+      
       // Dispara evento de input UMA ÚNICA VEZ para WhatsApp detectar
       inputField.dispatchEvent(new InputEvent('input', { bubbles: true }));
 
