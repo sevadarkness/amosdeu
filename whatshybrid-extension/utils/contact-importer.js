@@ -67,7 +67,12 @@ class ContactImporter {
     try {
       // Verificar se SheetJS está disponível
       if (typeof XLSX === 'undefined') {
-        throw new Error('Biblioteca XLSX não está carregada. Adicione o script SheetJS na página.');
+        return {
+          success: false,
+          error: 'Suporte a Excel não está disponível. Por favor, use arquivos CSV ou TXT.',
+          numbers: [],
+          missingLibrary: true
+        };
       }
 
       // Ler arquivo como ArrayBuffer

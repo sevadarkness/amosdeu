@@ -69,7 +69,8 @@
       <button id="sp_select_image" class="sp-btn sp-btn-secondary" style="flex:1">📎 Anexar imagem</button>
     </div>
     <div class="sp-row" style="gap:6px">
-      <button id="sp_record_audio" class="sp-btn sp-btn-secondary" style="flex:1">🎤 Gravar Áudio</button>
+      <input id="sp_audio_file" type="file" accept="audio/*,.mp3,.ogg,.wav,.m4a" style="display:none" />
+      <button id="sp_attach_audio" class="sp-btn sp-btn-secondary" style="flex:1">🎵 Anexar Áudio/MP3</button>
       <button id="sp_select_file" class="sp-btn sp-btn-secondary" style="flex:1">📁 Anexar Arquivo</button>
       <button id="sp_clear_image" class="sp-btn sp-btn-danger" style="display:none">🗑️ Remover</button>
     </div>
@@ -158,81 +159,8 @@
     </div>
   </div>
 
-  <!-- ============ CARD: AUTO-PILOT ============ -->
-  <div class="sp-card" id="autopilot-card" style="background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); border: 1px solid rgba(102,126,234,0.3);">
-    <div class="sp-title" style="color: #667eea; display: flex; align-items: center; gap: 8px;">
-      <span>🤖</span>
-      <span>Auto-Pilot IA</span>
-      <span id="ap-card-status" style="margin-left: auto; padding: 3px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; background: #6b7280; color: white;">PARADO</span>
-    </div>
-    <div class="sp-muted" style="color: rgba(255,255,255,0.6);">
-      Responde automaticamente às mensagens não lidas usando IA. Abre cada chat, gera resposta e envia.
-    </div>
-
-    <!-- Estatísticas -->
-    <div id="ap-card-stats" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px;">
-      <div style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 8px; text-align: center;">
-        <div id="ap-card-sent" style="font-size: 18px; font-weight: 700; color: #10b981;">0</div>
-        <div style="font-size: 9px; color: rgba(255,255,255,0.5); text-transform: uppercase;">Enviadas</div>
-      </div>
-      <div style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 8px; text-align: center;">
-        <div id="ap-card-pending" style="font-size: 18px; font-weight: 700; color: #667eea;">0</div>
-        <div style="font-size: 9px; color: rgba(255,255,255,0.5); text-transform: uppercase;">Pendentes</div>
-      </div>
-      <div style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 8px; text-align: center;">
-        <div id="ap-card-skipped" style="font-size: 18px; font-weight: 700; color: #f59e0b;">0</div>
-        <div style="font-size: 9px; color: rgba(255,255,255,0.5); text-transform: uppercase;">Puladas</div>
-      </div>
-      <div style="background: rgba(255,255,255,0.05); border-radius: 8px; padding: 8px; text-align: center;">
-        <div id="ap-card-errors" style="font-size: 18px; font-weight: 700; color: #ef4444;">0</div>
-        <div style="font-size: 9px; color: rgba(255,255,255,0.5); text-transform: uppercase;">Erros</div>
-      </div>
-    </div>
-
-    <!-- Barra de progresso -->
-    <div style="height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; margin-top: 12px; overflow: hidden;">
-      <div id="ap-card-progress" style="height: 100%; width: 0%; background: linear-gradient(90deg, #667eea, #764ba2); border-radius: 2px; transition: width 0.3s;"></div>
-    </div>
-
-    <!-- Controles principais -->
-    <div class="sp-row" style="margin-top: 12px; gap: 8px;">
-      <button id="ap-card-start" class="sp-btn sp-btn-primary" style="flex: 1; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none;">
-        ▶️ Iniciar
-      </button>
-      <button id="ap-card-pause" class="sp-btn sp-btn-secondary" style="flex: 1; display: none; background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); border: none; color: white;">
-        ⏸️ Pausar
-      </button>
-      <button id="ap-card-resume" class="sp-btn sp-btn-primary" style="flex: 1; display: none; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border: none;">
-        ▶️ Continuar
-      </button>
-      <button id="ap-card-stop" class="sp-btn sp-btn-danger" style="flex: 1; display: none; background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); border: none;">
-        ⏹️ Parar
-      </button>
-    </div>
-
-    <!-- Informação de status -->
-    <div id="ap-card-info" style="margin-top: 10px; padding: 8px 10px; background: rgba(102,126,234,0.15); border-radius: 6px; font-size: 11px; color: rgba(255,255,255,0.7); border-left: 3px solid #667eea;">
-      💡 Clique em Iniciar para começar a responder automaticamente.
-    </div>
-
-    <!-- Configurações rápidas -->
-    <div style="margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1);">
-      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-        <span style="font-size: 11px; color: rgba(255,255,255,0.6);">Pular grupos</span>
-        <label class="sp-toggle" style="position: relative; width: 36px; height: 20px;">
-          <input type="checkbox" id="ap-card-skip-groups" checked style="opacity: 0; width: 0; height: 0;">
-          <span style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,0.2); transition: .3s; border-radius: 20px;"></span>
-        </label>
-      </div>
-      <div style="display: flex; align-items: center; justify-content: space-between;">
-        <span style="font-size: 11px; color: rgba(255,255,255,0.6);">Limite: 30 respostas/hora</span>
-        <label class="sp-toggle" style="position: relative; width: 36px; height: 20px;">
-          <input type="checkbox" id="ap-card-limit" checked style="opacity: 0; width: 0; height: 0;">
-          <span style="position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background: rgba(255,255,255,0.2); transition: .3s; border-radius: 20px;"></span>
-        </label>
-      </div>
-    </div>
-  </div>
+  <!-- ============ CARD: AUTO-PILOT - REMOVED per v7.6.0 requirements ============ -->
+  <!-- All autopilot functionality has been moved to the dedicated Autopilot tab -->
 </section>
 
             <!-- ============ VIEW: EXTRATOR ============ -->
