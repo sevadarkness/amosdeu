@@ -1750,6 +1750,396 @@
   }
 
   // ============================================
+  // BUG 5: REFRESH BUTTON - RELOAD WITH REAL DATA
+  // ============================================
+  async function refreshMessages() {
+    console.log('[RecoverAdvanced] 🔄 Refreshing messages...');
+    
+    try {
+      // Step 1: Clear memory cache
+      const processedIds = new Set();
+      console.log('[RecoverAdvanced] Cache cleared');
+      
+      // Step 2: Reload from storage
+      await loadFromStorage();
+      console.log('[RecoverAdvanced] Loaded from storage:', state.messages.length, 'messages');
+      
+      // Step 3: Check for new deleted messages via hooks
+      const newMessages = await checkForNewDeletedMessages();
+      console.log('[RecoverAdvanced] Found', newMessages.length, 'new messages');
+      
+      // Step 4: Merge without duplicates
+      const allMessages = mergeWithoutDuplicates(state.messages, newMessages);
+      state.messages = allMessages.slice(0, CONFIG.MAX_MESSAGES);
+      
+      // Step 5: Save back to storage
+      await saveToStorage();
+      
+      console.log('[RecoverAdvanced] ✅ Refresh complete:', state.messages.length, 'total messages');
+      
+      return {
+        success: true,
+        total: state.messages.length,
+        newCount: newMessages.length
+      };
+    } catch (e) {
+      console.error('[RecoverAdvanced] Refresh failed:', e);
+      return {
+        success: false,
+        error: e.message
+      };
+    }
+  }
+  
+  /**
+   * BUG 5: Check for new deleted messages from WhatsApp Store
+   */
+  async function checkForNewDeletedMessages() {
+    const newMessages = [];
+    
+    try {
+      if (!window.Store?.Msg?.getModelsArray) {
+        return newMessages;
+      }
+      
+      // Get all messages and filter for revoked ones
+      const allMsgs = window.Store.Msg.getModelsArray() || [];
+      const revokedMsgs = allMsgs.filter(m => m.isRevoked || m.type === 'revoked');
+      
+      for (const msg of revokedMsgs) {
+        const id = msg.id?.id || msg.id?._serialized;
+        
+        // Check if we already have this message
+        const existing = state.messages.find(m => m.id === id);
+        if (!existing) {
+          const normalized = normalizeMessage(msg);
+          if (normalized) {
+            newMessages.push(normalized);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[RecoverAdvanced] checkForNewDeletedMessages failed:', e);
+    }
+    
+    return newMessages;
+  }
+  
+  /**
+   * BUG 5: Normalize WhatsApp message to our format
+   */
+  function normalizeMessage(msg) {
+    try {
+      return {
+        id: msg.id?.id || msg.id?._serialized || Date.now().toString(),
+        from: extractPhone(msg.from || msg.author || msg.sender),
+        to: extractPhone(msg.to || msg.chatId),
+        body: msg.body || msg.caption || '[Mídia]',
+        type: msg.type || 'chat',
+        action: msg.isRevoked ? 'revoked' : 'deleted',
+        timestamp: msg.t || msg.timestamp || Date.now(),
+        mediaType: msg.type,
+        mediaData: null
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+  
+  /**
+   * BUG 5: Merge messages without duplicates
+   */
+  function mergeWithoutDuplicates(existing, newMsgs) {
+    const merged = [...existing];
+    const existingIds = new Set(existing.map(m => m.id));
+    
+    for (const msg of newMsgs) {
+      if (!existingIds.has(msg.id)) {
+        merged.unshift(msg); // Add to beginning (most recent first)
+        existingIds.add(msg.id);
+      }
+    }
+    
+    return merged;
+  }
+
+  // ============================================
+  // BUG 6: SYNC - BACKEND CONNECTION CHECK
+  // ============================================
+  async function checkBackendConnection() {
+    console.log('[RecoverAdvanced] 🔍 Checking backend connection...');
+    
+    try {
+      // Step 1: Check if we have a token in storage
+      const stored = await chrome.storage.local.get(['whl_access_token', 'whl_user']);
+      const token = stored.whl_access_token;
+      const user = stored.whl_user;
+      
+      if (!token) {
+        console.log('[RecoverAdvanced] No token found');
+        return { connected: false, reason: 'no_token' };
+      }
+      
+      // Step 2: Check if socket is connected
+      if (window.BackendClient?.socket?.connected) {
+        console.log('[RecoverAdvanced] Socket already connected');
+        return { connected: true, user };
+      }
+      
+      // Step 3: Try to reconnect socket if we have token
+      if (token && window.BackendClient) {
+        console.log('[RecoverAdvanced] Attempting to reconnect socket...');
+        
+        // Try to connect
+        if (typeof window.BackendClient.connectSocket === 'function') {
+          window.BackendClient.connectSocket();
+        }
+        
+        // Wait a bit for connection
+        await sleep(2000);
+        
+        if (window.BackendClient.socket?.connected) {
+          console.log('[RecoverAdvanced] Socket reconnected successfully');
+          return { connected: true, user, reconnected: true };
+        }
+      }
+      
+      // Step 4: Fallback - try HTTP health check
+      try {
+        const baseUrl = window.BackendClient?.getBaseUrl?.() || CONFIG.BACKEND_URL;
+        const response = await fetch(`${baseUrl}/api/health`, {
+          headers: { 
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 5000
+        });
+        
+        if (response.ok) {
+          console.log('[RecoverAdvanced] Backend reachable via HTTP');
+          return { connected: true, user, viaHttp: true };
+        }
+      } catch (e) {
+        console.warn('[RecoverAdvanced] HTTP health check failed:', e);
+      }
+      
+      console.log('[RecoverAdvanced] Connection failed');
+      return { connected: false, reason: 'connection_failed' };
+      
+    } catch (e) {
+      console.error('[RecoverAdvanced] checkBackendConnection error:', e);
+      return { connected: false, reason: 'error', error: e.message };
+    }
+  }
+
+  // ============================================
+  // BUG 7: DEEPSCAN - COMPLETE WITH PROGRESS
+  // ============================================
+  async function executeDeepScan(onProgress) {
+    console.log('[RecoverAdvanced] 🔍 Starting DeepScan...');
+    
+    const results = {
+      success: false,
+      found: 0,
+      scanned: 0,
+      errors: []
+    };
+    
+    try {
+      // Phase 1: Get list of chats (0-20%)
+      onProgress?.({ phase: 1, progress: 10, status: 'Obtaining chat list...' });
+      const chats = await getAllChats();
+      onProgress?.({ phase: 1, progress: 20, status: `Found ${chats.length} chats` });
+      
+      if (chats.length === 0) {
+        throw new Error('No chats found');
+      }
+      
+      // Phase 2: Scan messages in each chat (20-60%)
+      const foundMessages = [];
+      const totalChats = chats.length;
+      
+      for (let i = 0; i < totalChats; i++) {
+        const chat = chats[i];
+        const progress = 20 + Math.floor((i / totalChats) * 40);
+        
+        onProgress?.({ 
+          phase: 2, 
+          progress, 
+          status: `Scanning: ${chat.name || chat.id}`,
+          detail: `${i + 1}/${totalChats} chats`
+        });
+        
+        try {
+          const deleted = await scanChatForDeletedMessages(chat.id);
+          foundMessages.push(...deleted);
+          results.scanned++;
+          
+          // Small delay to not overload
+          await sleep(100);
+        } catch (e) {
+          console.warn('[RecoverAdvanced] Error scanning chat:', chat.id, e);
+          results.errors.push({ chat: chat.id, error: e.message });
+        }
+      }
+      
+      onProgress?.({ 
+        phase: 2, 
+        progress: 60, 
+        status: `Found ${foundMessages.length} messages`,
+        detail: 'Phase 2/4 complete'
+      });
+      
+      // Phase 3: Process and deduplicate (60-80%)
+      onProgress?.({ phase: 3, progress: 70, status: 'Processing messages...' });
+      const processed = await processAndDeduplicate(foundMessages);
+      results.found = processed.length;
+      onProgress?.({ 
+        phase: 3, 
+        progress: 80, 
+        status: `${processed.length} unique messages`,
+        detail: 'Phase 3/4 complete'
+      });
+      
+      // Phase 4: Save and update (80-100%)
+      onProgress?.({ phase: 4, progress: 90, status: 'Saving to history...' });
+      
+      // Merge with existing messages
+      state.messages = mergeWithoutDuplicates(state.messages, processed);
+      state.messages = state.messages.slice(0, CONFIG.MAX_MESSAGES);
+      
+      await saveToStorage();
+      
+      onProgress?.({ 
+        phase: 4, 
+        progress: 100, 
+        status: '✅ DeepScan complete!',
+        detail: `${results.found} new messages recovered`
+      });
+      
+      results.success = true;
+      console.log('[RecoverAdvanced] ✅ DeepScan complete:', results);
+      
+      return results;
+      
+    } catch (e) {
+      console.error('[RecoverAdvanced] DeepScan error:', e);
+      results.errors.push({ global: e.message });
+      onProgress?.({ 
+        phase: 0, 
+        progress: 0, 
+        status: '❌ Error: ' + e.message
+      });
+      
+      return results;
+    }
+  }
+  
+  /**
+   * BUG 7: Get all chats from WhatsApp
+   */
+  async function getAllChats() {
+    try {
+      if (!window.Store?.Chat?.getModelsArray) {
+        throw new Error('WhatsApp Store not available');
+      }
+      
+      const chats = window.Store.Chat.getModelsArray() || [];
+      
+      return chats.map(chat => ({
+        id: chat.id?._serialized || chat.id,
+        name: chat.name || chat.formattedTitle || 'Unknown',
+        isGroup: chat.isGroup || false
+      }));
+    } catch (e) {
+      console.error('[RecoverAdvanced] getAllChats failed:', e);
+      return [];
+    }
+  }
+  
+  /**
+   * BUG 7: Scan specific chat for deleted messages
+   */
+  async function scanChatForDeletedMessages(chatId) {
+    const deleted = [];
+    
+    try {
+      // Method 1: Via Store.Msg
+      if (window.Store?.Msg?.getModelsArray) {
+        const msgs = window.Store.Msg.getModelsArray() || [];
+        const chatMsgs = msgs.filter(m => {
+          const msgChatId = m.id?.remote?._serialized || m.chatId?._serialized;
+          return msgChatId === chatId && (m.isRevoked || m.type === 'revoked');
+        });
+        
+        for (const msg of chatMsgs) {
+          const normalized = normalizeMessage(msg);
+          if (normalized) {
+            deleted.push(normalized);
+          }
+        }
+      }
+      
+      // Method 2: Via DOM (visible messages)
+      const container = document.querySelector(`[data-id="${chatId}"]`);
+      if (container) {
+        const revokedEls = container.querySelectorAll('[data-testid="recalled-message"], .message-revoked');
+        
+        for (const el of revokedEls) {
+          const msgData = extractMessageFromElement(el);
+          if (msgData) {
+            deleted.push(msgData);
+          }
+        }
+      }
+      
+    } catch (e) {
+      console.warn('[RecoverAdvanced] scanChatForDeletedMessages failed:', chatId, e);
+    }
+    
+    return deleted;
+  }
+  
+  /**
+   * BUG 7: Extract message data from DOM element
+   */
+  function extractMessageFromElement(element) {
+    try {
+      const id = element.getAttribute('data-id') || Date.now().toString();
+      const text = element.textContent || '';
+      
+      return {
+        id,
+        body: text || '[Deleted message]',
+        type: 'chat',
+        action: 'revoked',
+        timestamp: Date.now(),
+        from: 'Unknown',
+        to: 'Unknown'
+      };
+    } catch (e) {
+      return null;
+    }
+  }
+  
+  /**
+   * BUG 7: Process and deduplicate messages
+   */
+  async function processAndDeduplicate(messages) {
+    const unique = new Map();
+    
+    for (const msg of messages) {
+      const key = `${msg.id}_${msg.from}_${msg.timestamp}`;
+      
+      if (!unique.has(key)) {
+        unique.set(key, msg);
+      }
+    }
+    
+    return Array.from(unique.values());
+  }
+
+  // ============================================
   // API PÚBLICA
   // ============================================
   window.RecoverAdvanced = {
@@ -1841,6 +2231,18 @@
     
     // Limpeza
     clearHistory,
+    
+    // BUG 5: Refresh functionality
+    refreshMessages,
+    checkForNewDeletedMessages,
+    
+    // BUG 6: SYNC - Backend connection check
+    checkBackendConnection,
+    
+    // BUG 7: DeepScan with progress
+    executeDeepScan,
+    getAllChats,
+    scanChatForDeletedMessages,
     
     // Utilitários
     extractPhone
