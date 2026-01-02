@@ -1383,7 +1383,35 @@ function showView(viewName) {
     if (recoverBound) return;
     recoverBound = true;
 
-    $('sp_refresh_recover')?.addEventListener('click', () => recoverRefresh(true));
+    // FIX #4: Improved "Atualizar" (Refresh) button handler
+    $('sp_refresh_recover')?.addEventListener('click', async () => {
+      const btn = $('sp_refresh_recover');
+      const st = $('sp_recover_status');
+      if (!btn) return;
+      
+      btn.disabled = true;
+      btn.textContent = '⏳ Atualizando...';
+      if (st) st.textContent = '🔄 Atualizando dados...';
+      
+      try {
+        // Recarregar dados do storage
+        await window.RecoverAdvanced?.init?.();
+        
+        // Re-renderizar timeline
+        await recoverRefresh(true);
+        
+        // Mostrar toast de sucesso
+        showToast('✅ Lista atualizada!');
+        if (st) st.textContent = '✅ Atualizado com sucesso!';
+      } catch (e) {
+        showToast('❌ Erro ao atualizar');
+        if (st) st.textContent = `❌ Erro: ${e.message || e}`;
+        console.error('[Recover] Erro ao atualizar:', e);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '🔄 Atualizar';
+      }
+    });
 
     $('sp_clear_recover')?.addEventListener('click', async () => {
       if (!confirm('Limpar histórico de recover?')) return;
@@ -1425,34 +1453,59 @@ function showView(viewName) {
       }
     });
     
-    // FASE 4: Deep Scan button
+    // FIX #6: Deep Scan with progress bar
     $('recover_deep_scan')?.addEventListener('click', async () => {
       const btn = $('recover_deep_scan');
       const st = $('sp_recover_status');
       if (!btn || !st) return;
       
-      if (!confirm('⚠️ Deep Scan pode levar vários minutos e consumir muito processamento.\n\nContinuar?')) return;
+      if (!confirm('🔬 Deep Scan pode levar vários minutos.\n\nIsso vai carregar mensagens antigas de todos os chats.\n\nContinuar?')) {
+        return;
+      }
       
       btn.disabled = true;
       btn.textContent = '⏳ Escaneando...';
-      st.textContent = '🔬 Iniciando deep scan...';
+      
+      // Criar barra de progresso
+      st.innerHTML = `
+        <div style="margin-bottom: 8px;">🔬 Deep Scan em andamento...</div>
+        <div class="deep-scan-progress-bar">
+          <div id="deep_scan_progress" class="deep-scan-progress-fill" style="width: 0%;"></div>
+        </div>
+        <div id="deep_scan_info" style="font-size: 10px; margin-top: 4px; color: rgba(255,255,255,0.6);">Iniciando...</div>
+      `;
       
       try {
         const options = {
-          maxMessagesPerChat: 1000,
+          maxMessagesPerChat: 500,
           maxIterationsPerChat: 10,
-          delayBetweenLoads: 1000
+          delayBetweenLoads: 1000,
+          onProgress: (data) => {
+            const progressBar = document.getElementById('deep_scan_progress');
+            const infoEl = document.getElementById('deep_scan_info');
+            
+            if (progressBar && data.totalChats > 0) {
+              const pct = Math.round((data.chatIndex / data.totalChats) * 100);
+              progressBar.style.width = `${pct}%`;
+            }
+            
+            if (infoEl) {
+              infoEl.textContent = `Chat ${data.chatIndex}/${data.totalChats}: ${data.chatName || 'Carregando...'}`;
+            }
+          }
         };
         
         const result = await sendToActiveTab({ action: 'performDeepScan', options });
         if (result?.success) {
-          st.textContent = `✅ Deep Scan: ${result.totalScanned} msgs de ${result.totalChatsScanned} chats`;
+          st.innerHTML = `✅ Deep Scan concluído! ${result.totalScanned || 0} mensagens encontradas.`;
           await recoverRefresh(true);
+          showToast(`✅ Deep Scan: ${result.totalScanned || 0} mensagens`);
         } else {
           throw new Error(result?.error || 'Falha no deep scan');
         }
       } catch (e) {
-        st.textContent = `❌ ${e.message || e}`;
+        st.innerHTML = `❌ Erro no Deep Scan: ${e.message || e}`;
+        showToast('❌ Erro no Deep Scan');
       } finally {
         btn.disabled = false;
         btn.textContent = '🔬 Deep Scan';
