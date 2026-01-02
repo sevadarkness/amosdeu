@@ -359,7 +359,7 @@
         opacity: 1;
       }
 
-      /* Botão flutuante minimizado */
+      /* Botão flutuante minimizado - 🤖 Robot Button */
       .whl-sug-fab {
         position: fixed;
         bottom: 80px;
@@ -370,11 +370,11 @@
         border-radius: 50%;
         border: none;
         color: white;
-        font-size: 22px;
+        font-size: 24px;
         cursor: pointer;
         box-shadow: 0 4px 20px rgba(139, 92, 246, 0.5);
         z-index: 99997;
-        display: none;
+        display: flex;
         align-items: center;
         justify-content: center;
         transition: all 0.3s;
@@ -382,6 +382,7 @@
 
       .whl-sug-fab:hover {
         transform: scale(1.1);
+        box-shadow: 0 6px 24px rgba(139, 92, 246, 0.7);
       }
 
       .whl-sug-fab.visible {
@@ -438,16 +439,13 @@
     const fab = document.createElement('button');
     fab.className = 'whl-sug-fab';
     fab.id = 'whl-sug-fab';
-    fab.innerHTML = '💡<span class="whl-sug-fab-badge" id="whl-sug-fab-badge" style="display:none">0</span>';
-    fab.title = 'Ver sugestões';
+    fab.innerHTML = '🤖<span class="whl-sug-fab-badge" id="whl-sug-fab-badge" style="display:none">0</span>';
+    fab.title = 'Abrir/Fechar Sugestões de IA';
     document.body.appendChild(fab);
 
     // Event listeners
     document.getElementById('whl-sug-close').addEventListener('click', hidePanel);
-    fab.addEventListener('click', () => {
-      showPanel();
-      fab.classList.remove('visible');
-    });
+    fab.addEventListener('click', togglePanel);
 
     console.log('[SuggestionInjector] 💡 Painel criado');
   }
@@ -608,30 +606,22 @@
 
   function showPanel() {
     const panel = document.getElementById(CONFIG.PANEL_ID);
-    const fab = document.getElementById('whl-sug-fab');
     
     if (panel) {
       panel.classList.add('visible');
       state.isVisible = true;
     }
-    if (fab) {
-      fab.classList.remove('visible');
-    }
+    // Keep FAB visible - don't hide it
   }
 
   function hidePanel() {
     const panel = document.getElementById(CONFIG.PANEL_ID);
-    const fab = document.getElementById('whl-sug-fab');
     
     if (panel) {
       panel.classList.remove('visible');
       state.isVisible = false;
     }
-    
-    // Mostra FAB se há sugestões
-    if (fab && state.currentSuggestions.length > 0) {
-      fab.classList.add('visible');
-    }
+    // Keep FAB visible always
   }
 
   function togglePanel() {
