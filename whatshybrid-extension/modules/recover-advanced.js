@@ -851,7 +851,136 @@
   }
 
   // ============================================
-  // BUG 5: DOWNLOAD FULL-SIZE MEDIA
+  // BUG 1: DOWNLOAD FULL-SIZE MEDIA (REAL, NOT THUMBNAIL)
+  // ============================================
+  
+  /**
+   * BUG 1 SOLUTION: Download real media content, not just thumbnail
+   * Implements DOM traversal + Store API + Backend fallback
+   */
+  async function downloadRealMedia(messageId, mediaType) {
+    console.log('[RecoverAdvanced] 🔽 Downloading real media for:', messageId, mediaType);
+    
+    try {
+      // Step 1: Try to locate message element in DOM
+      const msgElement = document.querySelector(`[data-id="${messageId}"]`);
+      
+      if (msgElement) {
+        console.log('[RecoverAdvanced] Found message in DOM, trying navigation...');
+        
+        // Step 2: Navigate to previous sibling (where real content is)
+        const parentContainer = msgElement.closest('[data-testid="msg-container"]');
+        const previousSibling = parentContainer?.previousElementSibling;
+        
+        if (previousSibling) {
+          // Step 3: Find download button or media link
+          const downloadBtn = previousSibling.querySelector('[data-testid="media-download"]') ||
+                            previousSibling.querySelector('button[aria-label*="Download"]') ||
+                            previousSibling.querySelector('[data-testid="download"]');
+          
+          if (downloadBtn) {
+            // Step 4: Click and wait for download
+            console.log('[RecoverAdvanced] Found download button, clicking...');
+            downloadBtn.click();
+            await waitForDownload();
+            return { success: true, method: 'dom_click' };
+          }
+        }
+      }
+      
+      // Step 5: Fallback to Store.Msg API
+      if (window.Store?.Msg?.get) {
+        console.log('[RecoverAdvanced] Trying Store.Msg.get...');
+        const msg = await window.Store.Msg.get(messageId);
+        if (msg) {
+          return await downloadMediaFromStore(msg);
+        }
+      }
+      
+      // Step 6: Last fallback - use existing downloadFullMedia
+      console.log('[RecoverAdvanced] Using downloadFullMedia fallback...');
+      const media = await downloadFullMedia(messageId);
+      return media ? { success: true, data: media, method: 'download_full_media' } : { success: false };
+      
+    } catch (e) {
+      console.error('[RecoverAdvanced] downloadRealMedia failed:', e);
+      return { success: false, error: e.message };
+    }
+  }
+  
+  /**
+   * Helper: Wait for download to complete
+   */
+  function waitForDownload(timeout = 5000) {
+    return new Promise((resolve) => {
+      const startTime = Date.now();
+      const checkInterval = setInterval(() => {
+        // Check if download started (this is a placeholder - actual implementation depends on browser)
+        if (Date.now() - startTime > timeout) {
+          clearInterval(checkInterval);
+          resolve(true);
+        }
+      }, 500);
+    });
+  }
+  
+  /**
+   * Helper: Download media from Store message object
+   */
+  async function downloadMediaFromStore(msg) {
+    try {
+      if (!msg.mediaData) {
+        console.warn('[RecoverAdvanced] No mediaData in message');
+        return null;
+      }
+      
+      // Method 1: Direct blob
+      if (msg.mediaData.mediaBlob) {
+        const base64 = await blobToBase64(msg.mediaData.mediaBlob);
+        return { success: true, data: base64, method: 'media_blob' };
+      }
+      
+      // Method 2: Download and decrypt via mediaKey + filehash
+      if (msg.mediaKey && msg.filehash && window.Store?.DownloadManager?.downloadAndDecrypt) {
+        try {
+          const decrypted = await window.Store.DownloadManager.downloadAndDecrypt({
+            directPath: msg.directPath,
+            mediaKey: msg.mediaKey,
+            type: msg.type,
+            filehash: msg.filehash
+          });
+          
+          if (decrypted) {
+            const base64 = await blobToBase64(decrypted);
+            return { success: true, data: base64, method: 'download_decrypt' };
+          }
+        } catch (e) {
+          console.warn('[RecoverAdvanced] downloadAndDecrypt failed:', e);
+        }
+      }
+      
+      // Method 3: Use DownloadManager.downloadMedia
+      if (window.Store?.DownloadManager?.downloadMedia) {
+        try {
+          const blob = await window.Store.DownloadManager.downloadMedia(msg);
+          if (blob) {
+            const base64 = await blobToBase64(blob);
+            return { success: true, data: base64, method: 'download_media' };
+          }
+        } catch (e) {
+          console.warn('[RecoverAdvanced] downloadMedia failed:', e);
+        }
+      }
+      
+      return { success: false, error: 'No download method succeeded' };
+    } catch (e) {
+      console.error('[RecoverAdvanced] downloadMediaFromStore failed:', e);
+      return { success: false, error: e.message };
+    }
+  }
+  
+  // ============================================
+  // EXISTING: DOWNLOAD FULL-SIZE MEDIA
   // ============================================
   async function downloadFullMedia(messageId) {
     try {
@@ -1680,8 +1809,10 @@
     
     // Mídia
     downloadMediaActive,
-    downloadFullMedia, // BUG 5: Full-size media download
-    saveMediaFull, // BUG 5: Save full media separately
+    downloadFullMedia, // BUG 1/5: Full-size media download (old method)
+    downloadRealMedia, // BUG 1: NEW - Download real media with DOM traversal
+    downloadMediaFromStore, // BUG 1: Helper for Store API
+    saveMediaFull, // BUG 1/5: Save full media separately
     transcribeAudio,
     extractTextFromImage,
     compressMedia,

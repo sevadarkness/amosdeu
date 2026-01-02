@@ -1401,13 +1401,126 @@ window.whl_hooks_main = () => {
         return null;
     }
     
+    // ============================================
+    // BUG 3: DELETION TYPE DETECTION
+    // ============================================
+    
     /**
-     * CORREÇÃO 1.2: Salvar mensagem apagada no histórico
+     * BUG 3: Detect type of deletion/revoke
+     * Returns: 'revoked_by_sender' | 'deleted_locally' | 'deleted_by_admin' | 'unknown'
+     */
+    function detectDeletionType(msg, event) {
+        try {
+            // Check if it's a revoke from sender
+            if (event?.type === 'revoke' || msg.isRevoked || msg.type === 'revoked') {
+                return 'revoked_by_sender';
+            }
+            
+            // Check if deleted from my own device
+            if (event?.fromMe || msg.fromMe) {
+                return 'deleted_locally';
+            }
+            
+            // Try to detect owner
+            const owner = getOwnerNumber();
+            const from = extractPhoneNumber(msg.from || msg.author || msg.sender);
+            
+            if (owner && from === owner) {
+                return 'deleted_locally';
+            }
+            
+            // Check if deleted by admin in group
+            if (msg.isGroup || msg.chat?.isGroup) {
+                const author = extractPhoneNumber(msg.author || event?.author);
+                const sender = extractPhoneNumber(msg.from || msg.sender);
+                
+                if (author && sender && author !== sender) {
+                    return 'deleted_by_admin';
+                }
+            }
+            
+            return 'unknown';
+        } catch (e) {
+            console.warn('[WHL] detectDeletionType error:', e);
+            return 'unknown';
+        }
+    }
+    
+    /**
+     * BUG 3: Get actor who deleted/revoked the message
+     */
+    function getDeleteActor(msg, event) {
+        try {
+            const author = extractPhoneNumber(msg.author || event?.author || msg.from || msg.sender);
+            return author || 'Desconhecido';
+        } catch (e) {
+            return 'Desconhecido';
+        }
+    }
+    
+    /**
+     * BUG 3: Get notification text based on deletion type
+     */
+    function getNotificationText(deletionType) {
+        const texts = {
+            'revoked_by_sender': 'Mensagem apagada pelo remetente',
+            'deleted_locally': 'Mensagem excluída localmente',
+            'deleted_by_admin': 'Mensagem removida por administrador',
+            'unknown': 'Mensagem deletada'
+        };
+        return texts[deletionType] || texts.unknown;
+    }
+    
+    /**
+     * BUG 3: Get owner number (current user)
+     */
+    function getOwnerNumber() {
+        try {
+            // Try Store.Conn
+            if (window.Store?.Conn?.me?._serialized) {
+                return cleanPhoneNumber(window.Store.Conn.me._serialized);
+            }
+            
+            if (window.Store?.Conn?.wid?._serialized) {
+                return cleanPhoneNumber(window.Store.Conn.wid._serialized);
+            }
+            
+            // Try localStorage
+            const storedWid = localStorage.getItem('last-wid-md') || localStorage.getItem('last-wid');
+            if (storedWid) {
+                try {
+                    const parsed = JSON.parse(storedWid);
+                    const num = cleanPhoneNumber(parsed._serialized || parsed);
+                    if (/^\d{8,15}$/.test(num)) {
+                        return num;
+                    }
+                } catch (e) {}
+            }
+            
+            return null;
+        } catch (e) {
+            return null;
+        }
+    }
+    
+    /**
+     * BUG 3: Clean phone number helper
+     */
+    function cleanPhoneNumber(phone) {
+        if (!phone || typeof phone !== 'string') return '';
+        return phone.replace(WHATSAPP_SUFFIXES_REGEX, '').replace(/\D/g, '');
+    }
+    
+    /**
+     * CORREÇÃO 1.2 + BUG 2 + BUG 3: Salvar mensagem apagada com notificação persistente e tipo de deleção
      */
     function salvarMensagemApagada(msg) {
         let from = extractPhoneNumber(msg);
         const to = extractPhoneNumber({ to: msg.to || msg.chatId || msg.id?.remote });
         const body = msg.body || '[mensagem sem texto]';
+        
+        // BUG 3: Detect deletion type
+        const deletionType = detectDeletionType(msg);
         
         const entrada = {
             id: msg.id?.id || Date.now().toString(),
@@ -1418,7 +1531,21 @@ window.whl_hooks_main = () => {
             action: 'deleted',
             mediaType: msg.type,
             mediaData: null,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            // BUG 3: Add deletion type info
+            deletionType: deletionType,
+            deletionInfo: {
+                type: deletionType,
+                actor: getDeleteActor(msg),
+                timestamp: Date.now()
+            },
+            // BUG 2: Add persistent notification
+            notification: {
+                type: 'deleted',
+                text: getNotificationText(deletionType),
+                timestamp: Date.now(),
+                persistent: true  // BUG 2: Flag to keep visible always
+            }
         };
         
         // PHASE 2: Usar novo sistema de versões via RecoverAdvanced
@@ -1476,11 +1603,11 @@ window.whl_hooks_main = () => {
             // Ignorar erros de contexto
         }
         
-        console.log(`[WHL Recover] 🗑️ Mensagem apagada de ${entrada.from}: ${entrada.body.substring(0, 50)}...`);
+        console.log(`[WHL Recover] 🗑️ Mensagem apagada (${deletionType}) de ${entrada.from}: ${entrada.body.substring(0, 50)}...`);
     }
 
     /**
-     * Bug fix: Save edited message to history
+     * Bug fix + BUG 2: Save edited message to history with persistent notification
      */
     function salvarMensagemEditada(message) {
         const messageContent = message?.body || message?.caption || '[sem conteúdo]';
@@ -1501,7 +1628,23 @@ window.whl_hooks_main = () => {
             action: 'edited',
             previousContent: previousContent,
             previousBody: previousContent, // PHASE 2: Add for compatibility
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            // BUG 3: Add deletion type info (for consistency)
+            deletionType: 'edited',
+            deletionInfo: {
+                type: 'edited',
+                actor: from,
+                timestamp: Date.now(),
+                original: previousContent,
+                edited: messageContent
+            },
+            // BUG 2: Add persistent notification
+            notification: {
+                type: 'edited',
+                text: 'Mensagem editada',
+                timestamp: Date.now(),
+                persistent: true  // BUG 2: Flag to keep visible always
+            }
         };
         
         console.log('[WHL Recover] ✏️ Salvando mensagem editada:', entrada);
@@ -1626,6 +1769,9 @@ window.whl_hooks_main = () => {
         if (!body && !mediaData) body = '[Mensagem sem texto - mídia ou sticker]';
         if (!from || from === 'Desconhecido') from = 'Número desconhecido';
         
+        // BUG 3: Detect deletion type (revoked)
+        const deletionType = 'revoked_by_sender'; // Always revoked for this function
+        
         const entrada = {
             id: msg.id?.id || Date.now().toString(),
             from: from,
@@ -1637,10 +1783,24 @@ window.whl_hooks_main = () => {
             mediaData: mediaData,
             mimetype: mimetype,
             filename: filename,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            // BUG 3: Add deletion type info
+            deletionType: deletionType,
+            deletionInfo: {
+                type: deletionType,
+                actor: from,
+                timestamp: Date.now()
+            },
+            // BUG 2: Add persistent notification
+            notification: {
+                type: 'revoked',
+                text: 'Mensagem apagada pelo remetente',
+                timestamp: Date.now(),
+                persistent: true  // BUG 2: Flag to keep visible always
+            }
         };
         
-        console.log('[WHL Recover] 📝 Salvando:', entrada.mediaData ? `[MÍDIA:${entrada.mediaType}]` : entrada.body?.substring(0, 30));
+        console.log('[WHL Recover] 📝 Salvando mensagem revogada:', entrada.mediaData ? `[MÍDIA:${entrada.mediaType}]` : entrada.body?.substring(0, 30));
         
         // PHASE 2: Usar novo sistema de versões via RecoverAdvanced
         if (window.RecoverAdvanced?.registerMessageEvent) {
