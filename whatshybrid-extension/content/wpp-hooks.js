@@ -1188,7 +1188,7 @@ window.whl_hooks_main = () => {
     const MAX_CACHE_SIZE = 1000; // Aumentar para 1000
     
     // Array para armazenar histórico de mensagens recuperadas
-    const historicoRecover = [];
+    let historicoRecover = [];
     
     // Constants for recover history limits
     const MAX_STORAGE_MB = 5;

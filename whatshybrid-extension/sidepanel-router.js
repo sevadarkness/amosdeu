@@ -3357,19 +3357,7 @@ function showView(viewName) {
           console.error('[WHL Router] Error executing scheduled campaign:', error);
           sendResponse({ success: false, error: error.message });
         }
-      
-  // ========= Fallback: Verificação periódica de view =========
-  setInterval(async () => {
-    try {
-      const { whl_active_view } = await chrome.storage.local.get('whl_active_view');
-      if (whl_active_view && whl_active_view !== currentView) {
-        console.log('[SidePanel Router] ⚡ Sync check - view mismatch, updating:', whl_active_view);
-        showView(whl_active_view);
-      }
-    } catch(e) {}
-  }, 1000);
-
-})();
+      })();
       return true; // Will respond asynchronously
     }
   });

@@ -50,8 +50,9 @@
     </div>
     
     <div class="sp-row" style="margin-top:8px;align-items:center">
-      <input id="sp_excel_file" type="file" accept=".xlsx,.xls" style="display:none" />
-      <button id="sp_import_excel" class="sp-btn sp-btn-secondary" style="flex:1">📊 Importar Excel</button>
+      <!-- Excel import disabled until XLSX library is added (CSP restriction) -->
+      <!-- <input id="sp_excel_file" type="file" accept=".xlsx,.xls" style="display:none" /> -->
+      <!-- <button id="sp_import_excel" class="sp-btn sp-btn-secondary" style="flex:1">📊 Importar Excel</button> -->
     </div>
     
     <div id="sp_csv_hint" class="sp-status"></div>
@@ -1854,9 +1855,9 @@
       </div>
       
       <div class="sp-row" style="margin-top:10px;gap:6px">
-        <button id="recover_export_csv" class="sp-btn sp-btn-secondary" style="flex:1">📊 CSV</button>
-        <button id="recover_export_txt" class="sp-btn sp-btn-secondary" style="flex:1">📝 TXT</button>
-        <button id="recover_export_pdf" class="sp-btn sp-btn-secondary" style="flex:1">📄 PDF</button>
+        <button id="recover_export_csv_2" class="sp-btn sp-btn-secondary" style="flex:1">📊 CSV</button>
+        <button id="recover_export_txt_2" class="sp-btn sp-btn-secondary" style="flex:1">📝 TXT</button>
+        <button id="recover_export_pdf_2" class="sp-btn sp-btn-secondary" style="flex:1">📄 PDF</button>
       </div>
       
       <div id="recover_stats" class="sp-muted" style="margin-top:10px;font-size:11px">
@@ -1876,9 +1877,9 @@
       </div>
       
       <div class="sp-row" style="margin-top:10px;gap:6px">
-        <button id="recover_prev_page" class="sp-btn sp-btn-secondary sp-btn-sm" disabled>◀ Anterior</button>
-        <span id="recover_page_info" class="sp-muted" style="flex:1;text-align:center">Página 1</span>
-        <button id="recover_next_page" class="sp-btn sp-btn-secondary sp-btn-sm">Próxima ▶</button>
+        <button id="recover_prev_page_2" class="sp-btn sp-btn-secondary sp-btn-sm" disabled>◀ Anterior</button>
+        <span id="recover_page_info_2" class="sp-muted" style="flex:1;text-align:center">Página 1</span>
+        <button id="recover_next_page_2" class="sp-btn sp-btn-secondary sp-btn-sm">Próxima ▶</button>
       </div>
     </div>
 
