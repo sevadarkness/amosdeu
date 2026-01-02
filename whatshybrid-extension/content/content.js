@@ -6268,7 +6268,7 @@ window.addEventListener('message', (e) => {
       const dateStr = date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
       
       // CORREÇÃO ISSUE 05: Diferenciar entre mensagens apagadas e editadas
-      const isEdited = msg.type === 'edited';
+      const isEdited = msg.action === 'edited';
       const typeClass = isEdited ? 'edited' : 'deleted';
       const typeIcon = isEdited ? '✏️' : '🗑️';
       const typeLabel = isEdited ? 'Editada' : 'Apagada';
@@ -6289,7 +6289,7 @@ window.addEventListener('message', (e) => {
           </div>
           <div class="card-footer">
             <span class="date">${dateStr}</span>
-            <button class="copy-btn" onclick="navigator.clipboard.writeText('${message.replace(/'/g, "\\'")}').then(() => { this.textContent='✅ Copiado!'; setTimeout(() => this.textContent='📋 Copiar', 2000); })">📋 Copiar</button>
+            <button class="copy-btn" onclick="(function(btn) { navigator.clipboard.writeText('${message.replace(/'/g, "\\'")}').then(function() { btn.textContent='✅ Copiado!'; setTimeout(function() { btn.textContent='📋 Copiar'; }, 2000); }); })(this)">📋 Copiar</button>
           </div>
         </div>
       `;
@@ -6344,7 +6344,7 @@ window.addEventListener('message', (e) => {
           const dateStr = date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
           
           // CORREÇÃO ISSUE 05: Diferenciar entre mensagens apagadas e editadas
-          const isEdited = msg.type === 'edited';
+          const isEdited = msg.action === 'edited';
           const typeClass = isEdited ? 'edited' : 'deleted';
           const typeIcon = isEdited ? '✏️' : '🗑️';
           const typeLabel = isEdited ? 'Editada' : 'Apagada';
@@ -6365,7 +6365,7 @@ window.addEventListener('message', (e) => {
               </div>
               <div class="card-footer">
                 <span class="date">${dateStr}</span>
-                <button class="copy-btn" onclick="navigator.clipboard.writeText('${message.replace(/'/g, "\\'")}').then(() => { this.textContent='✅ Copiado!'; setTimeout(() => this.textContent='📋 Copiar', 2000); })">📋 Copiar</button>
+                <button class="copy-btn" onclick="(function(btn) { navigator.clipboard.writeText('${message.replace(/'/g, "\\'")}').then(function() { btn.textContent='✅ Copiado!'; setTimeout(function() { btn.textContent='📋 Copiar'; }, 2000); }); })(this)">📋 Copiar</button>
               </div>
             </div>
           `;
