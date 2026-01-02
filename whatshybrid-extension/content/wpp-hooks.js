@@ -2092,8 +2092,18 @@ window.whl_hooks_main = () => {
             
             // 2. chrome.runtime para sidepanel/background
             if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
-                chrome.runtime.sendMessage(data).catch(() => {
-                    // Ignore errors if no listener
+                chrome.runtime.sendMessage(data).catch((error) => {
+                    // Log different error types for debugging
+                    const errorMsg = error?.message || String(error);
+                    if (errorMsg.includes('Receiving end does not exist')) {
+                        // Expected when no listener is registered - can be ignored
+                        console.debug('[WHL Hooks] No receiver for runtime message (expected)');
+                    } else if (errorMsg.includes('The message port closed')) {
+                        console.warn('[WHL Hooks] Message port closed - listener may have disconnected');
+                    } else {
+                        // Unexpected error - log for debugging
+                        console.warn('[WHL Hooks] Unexpected runtime.sendMessage error:', errorMsg);
+                    }
                 });
             }
             
@@ -2172,9 +2182,12 @@ window.whl_hooks_main = () => {
             chatIds = null, // null = all chats
             maxMessagesPerChat = 1000,
             maxIterationsPerChat = 10,
-            delayBetweenLoads = 1000,
+            delayBetweenLoads = 1000, // Rate limiting: minimum 1 second between loads
             onProgress = null
         } = options;
+        
+        // Enforce minimum delay to prevent API abuse
+        const safeDelay = Math.max(delayBetweenLoads, 500); // At least 500ms
         
         try {
             const ChatMod = tryRequireModule('WAWebChatCollection');
@@ -2197,6 +2210,7 @@ window.whl_hooks_main = () => {
             
             let totalScanned = 0;
             let totalChatsScanned = 0;
+            let consecutiveFailures = 0; // Track failures for exponential backoff
             
             for (const chat of chatsToScan) {
                 if (!chat.msgs) continue;
@@ -2211,14 +2225,24 @@ window.whl_hooks_main = () => {
                         break; // Reached limit or no new messages loaded
                     }
                     
-                    // Try to load earlier messages
+                    // Try to load earlier messages with exponential backoff on failures
                     try {
                         if (typeof chat.loadEarlierMsgs === 'function') {
                             await chat.loadEarlierMsgs();
+                            consecutiveFailures = 0; // Reset on success
                         }
                     } catch (e) {
                         console.warn('[WHL Hooks] loadEarlierMsgs failed for chat:', chat.id?._serialized, e);
-                        break;
+                        consecutiveFailures++;
+                        
+                        // Exponential backoff: wait longer after repeated failures
+                        if (consecutiveFailures > 0) {
+                            const backoffDelay = safeDelay * Math.pow(2, Math.min(consecutiveFailures, 5));
+                            console.log(`[WHL Hooks] Applying backoff: ${backoffDelay}ms after ${consecutiveFailures} failures`);
+                            await new Promise(resolve => setTimeout(resolve, backoffDelay));
+                        }
+                        
+                        break; // Stop loading for this chat after failure
                     }
                     
                     // Register loaded messages
@@ -2260,10 +2284,11 @@ window.whl_hooks_main = () => {
                         });
                     }
                     
-                    // Delay between loads
-                    if (delayBetweenLoads > 0) {
-                        await new Promise(resolve => setTimeout(resolve, delayBetweenLoads));
-                    }
+                    // Rate limiting: delay between loads (with backoff if needed)
+                    const effectiveDelay = consecutiveFailures > 0 
+                        ? safeDelay * Math.pow(2, Math.min(consecutiveFailures, 3))
+                        : safeDelay;
+                    await new Promise(resolve => setTimeout(resolve, effectiveDelay));
                 }
                 
                 totalChatsScanned++;

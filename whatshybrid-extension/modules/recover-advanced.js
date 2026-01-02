@@ -277,6 +277,9 @@
   // BUG 3: ANTI-DUPLICAÇÃO ROBUSTA
   // ============================================
   
+  // Configurable threshold for duplicate detection
+  const DUPLICATE_TIME_THRESHOLD_MS = 5000; // 5 seconds
+  
   function normalizeContent(content) {
     if (!content || typeof content !== 'string') return '';
     return content.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -311,9 +314,9 @@
       const normalizedExistingBody = normalizeContent(existingBody);
       if (normalizedExistingBody !== normalizedNewBody) continue;
       
-      // 3. Check if timestamps are close (< 5 seconds)
+      // 3. Check if timestamps are close (configurable threshold)
       const timeDiff = Math.abs((newTimestamp || 0) - (existingTimestamp || 0));
-      if (timeDiff < 5000) {
+      if (timeDiff < DUPLICATE_TIME_THRESHOLD_MS) {
         console.log('[RecoverAdvanced] Duplicate event detected and ignored:', {
           msgId,
           state: newState,
@@ -920,6 +923,10 @@
       if (response.ok) {
         const data = await response.json();
         if (data.text) return data.text;
+      } else if (response.status === 404) {
+        console.warn('[RecoverAdvanced] Backend transcription endpoint not available (404)');
+      } else {
+        console.warn('[RecoverAdvanced] Backend transcription failed with status:', response.status);
       }
     } catch (e) {
       console.warn('[RecoverAdvanced] Transcrição via backend falhou:', e.message);
