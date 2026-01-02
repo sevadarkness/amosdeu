@@ -47,6 +47,26 @@ Validates the TemplateManager class functionality:
 - Category filtering
 - Template lookup by ID
 
+### 5. RECOVER Phases 1-2 Tests (`recover-phases-1-2.test.js`) **NEW**
+
+Validates the new RECOVER module optimization implementation:
+
+**Phase 1 - Core messageVersions Map:**
+- MESSAGE_STATES constants verification
+- REVOKED_UNIVERSE_STATES verification
+- registerMessageEvent function
+- Message history tracking
+- Query helper functions (getMessageHistory, getCurrentState, isInRevokedUniverse, getRevokedUniverseMessages)
+
+**Phase 2 - Enhanced tracking:**
+- cleanPhoneNumber function
+- isValidPhoneNumber function
+- extractPhoneNumber with extensive field support
+- extractChatId function
+- getOwner function
+- determineDirection function (incoming/outgoing/third_party)
+- Filter integration (direction and state filters)
+
 ## How to Run Tests
 
 1. **Load the extension** in Chrome/Edge (Developer Mode)
