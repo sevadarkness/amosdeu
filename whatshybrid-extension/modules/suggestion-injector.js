@@ -114,7 +114,7 @@
 
   const CONFIG = {
     PANEL_ID: 'whl-suggestions-panel',
-    MAX_SUGGESTIONS: 5,
+    MAX_SUGGESTIONS: 1, // Show only ONE best suggestion
     AUTO_HIDE_DELAY: 0, // 0 = NUNCA fecha automaticamente - usuário fecha manualmente
     ANIMATION_DURATION: 300
   };
@@ -617,6 +617,50 @@
       hidePanel();
     } else {
       showPanel();
+      // Generate suggestion immediately when opening
+      requestSuggestionGeneration();
+    }
+  }
+
+  // Request suggestion generation from AI
+  async function requestSuggestionGeneration() {
+    try {
+      // Try to get current chat context
+      const chatId = state.currentChatId || getCurrentChatId();
+      
+      // Request suggestions via SmartRepliesModule if available
+      if (window.SmartRepliesModule && typeof window.SmartRepliesModule.generateSuggestions === 'function') {
+        const contextMessages = window.SmartRepliesModule.getHistory?.(chatId) || [];
+        const suggestions = await window.SmartRepliesModule.generateSuggestions(chatId, contextMessages);
+        if (suggestions && suggestions.length > 0) {
+          showSuggestions(suggestions, chatId);
+        } else {
+          showEmptySuggestion();
+        }
+      } else {
+        // Fallback: show message that AI needs to be configured
+        showEmptySuggestion();
+      }
+    } catch (error) {
+      console.error('[SuggestionInjector] Error generating suggestion:', error);
+      showEmptySuggestion();
+    }
+  }
+
+  function getCurrentChatId() {
+    // Try to get current chat ID from WhatsApp
+    try {
+      if (window.Store?.Chat?.getActive) {
+        return window.Store.Chat.getActive()?.id?._serialized;
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  function showEmptySuggestion() {
+    const body = document.getElementById('whl-sug-body');
+    if (body) {
+      body.innerHTML = '<div class="whl-sug-empty">Configure a IA no painel de configurações para ver sugestões.</div>';
     }
   }
 

@@ -121,7 +121,7 @@
         MAX_TYPING_TIME: 5000,
         MAX_AUTO_RESPONSES: 5,
         CONTEXT_MESSAGES: 10,
-        SUGGESTIONS_COUNT: 3,
+        SUGGESTIONS_COUNT: 1, // Generate only ONE best suggestion
         SENTIMENT_KEYWORDS: {
             positive: ['obrigado', 'ótimo', 'excelente', 'perfeito', 'adorei', 'maravilhoso', 'parabéns', 'top', 'amei', 'incrível', 'show', 'demais', 'legal', 'bom', 'gostei', 'satisfeito'],
             negative: [
