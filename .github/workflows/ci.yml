@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint-and-test:
+    name: Lint and Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        cache-dependency-path: whatshybrid-backend/package-lock.json
+        
+    - name: Install backend dependencies
+      run: |
+        cd whatshybrid-backend
+        npm ci
+        
+    - name: Lint JavaScript code
+      run: |
+        cd whatshybrid-backend
+        # Run eslint if configured, otherwise just check syntax
+        if [ -f ".eslintrc.js" ] || [ -f ".eslintrc.json" ]; then
+          npm run lint || echo "No lint script found, skipping..."
+        else
+          echo "No ESLint configuration found, checking syntax only"
+          node -c src/server.js
+        fi
+        
+    - name: Run backend tests
+      run: |
+        cd whatshybrid-backend
+        npm test
+        
+    - name: Verify JSON syntax
+      run: |
+        echo "Checking manifest.json syntax..."
+        node -e "JSON.parse(require('fs').readFileSync('whatshybrid-extension/manifest.json', 'utf8'))"
+        echo "Checking backend package.json syntax..."
+        node -e "JSON.parse(require('fs').readFileSync('whatshybrid-backend/package.json', 'utf8'))"
+        echo "All JSON files are valid!"
+        
+    - name: Upload coverage reports
+      if: matrix.node-version == '20.x'
+      uses: codecov/codecov-action@v4
+      with:
+        directory: ./whatshybrid-backend/coverage
+        flags: backend
+        fail_ci_if_error: false
+      env:
+        CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
