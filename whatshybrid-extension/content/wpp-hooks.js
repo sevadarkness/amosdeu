@@ -420,6 +420,9 @@ window.whl_hooks_main = () => {
             message?.from?._serialized,
             message?.from?.user,
             message?.from,
+            message?.to?._serialized,      // CORREÇÃO 1.3: ADICIONAR
+            message?.to?.user,              // CORREÇÃO 1.3: ADICIONAR
+            message?.to,                    // CORREÇÃO 1.3: ADICIONAR
             message?.chat?.contact?.number,
             message?.chat?.contact?.id?.user,
             message?.chat?.id?.user,
@@ -1399,6 +1402,75 @@ window.whl_hooks_main = () => {
     }
     
     /**
+     * CORREÇÃO 1.2: Salvar mensagem apagada no histórico
+     */
+    function salvarMensagemApagada(msg) {
+        let from = extractPhoneNumber(msg);
+        const to = extractPhoneNumber({ to: msg.to || msg.chatId || msg.id?.remote });
+        const body = msg.body || '[mensagem sem texto]';
+        
+        const entrada = {
+            id: msg.id?.id || Date.now().toString(),
+            from,
+            to,
+            body,
+            type: detectMessageType(body, msg.type),
+            action: 'deleted',
+            mediaType: msg.type,
+            mediaData: null,
+            timestamp: Date.now()
+        };
+        
+        historicoRecover.push(entrada);
+        
+        // Aplicar limites
+        let currentSize = new Blob([JSON.stringify(historicoRecover)]).size;
+        
+        while (currentSize > MAX_STORAGE_BYTES && historicoRecover.length > 10) {
+            historicoRecover.shift();
+            currentSize = new Blob([JSON.stringify(historicoRecover)]).size;
+        }
+        
+        if (historicoRecover.length > MAX_RECOVER_MESSAGES) {
+            historicoRecover.splice(0, historicoRecover.length - MAX_RECOVER_MESSAGES);
+        }
+        
+        // Salvar no localStorage
+        try {
+            const dataToSave = JSON.stringify(historicoRecover);
+            localStorage.setItem('whl_recover_history', dataToSave);
+            syncRecoverToExtension(historicoRecover);
+        } catch(e) {
+            console.error('[WHL Recover] Erro ao salvar mensagem apagada:', e);
+        }
+        
+        // Notificar UI
+        window.postMessage({
+            type: 'WHL_RECOVER_NEW_MESSAGE',
+            payload: {
+                ...entrada,
+                action: 'deleted'
+            },
+            message: entrada,
+            total: historicoRecover.length
+        }, window.location.origin);
+        
+        // CORREÇÃO 5.2: Enviar para background para broadcast
+        try {
+            if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+                chrome.runtime.sendMessage({
+                    type: 'WHL_RECOVER_NEW_MESSAGE',
+                    payload: entrada
+                });
+            }
+        } catch (e) {
+            // Ignorar erros de contexto
+        }
+        
+        console.log(`[WHL Recover] 🗑️ Mensagem apagada de ${entrada.from}: ${entrada.body.substring(0, 50)}...`);
+    }
+
+    /**
      * Bug fix: Save edited message to history
      */
     function salvarMensagemEditada(message) {
@@ -1407,6 +1479,10 @@ window.whl_hooks_main = () => {
         
         if (!from || from === 'Desconhecido') from = 'Número desconhecido';
         
+        // CORREÇÃO 3: Recuperar previousContent do cache
+        const originalCached = messageCache.get(message.id?.id);
+        const previousContent = message.previousBody || originalCached?.body || null;
+        
         const entrada = {
             id: message.id?.id || Date.now().toString(),
             from: from,
@@ -1414,7 +1490,7 @@ window.whl_hooks_main = () => {
             body: messageContent,
             type: 'chat',
             action: 'edited',
-            previousContent: message.previousBody || null,
+            previousContent: previousContent,
             timestamp: Date.now()
         };
         
@@ -1450,8 +1526,9 @@ window.whl_hooks_main = () => {
             } catch(e2) {
                 console.error('[WHL Recover] Falha crítica ao salvar histórico', e2);
             }
-
-        // v7.5.0: Emitir evento compatível com RecoverAdvanced
+        }
+        
+        // CORREÇÃO 1.4: Manter apenas um postMessage com action correto
         window.postMessage({
             type: 'WHL_RECOVER_NEW_MESSAGE',
             payload: {
@@ -1461,20 +1538,18 @@ window.whl_hooks_main = () => {
             message: entrada,
             total: historicoRecover.length
         }, window.location.origin);
-    
-        }
         
-        // Notificar UI
-        // v7.5.0: Emitir evento compatível com RecoverAdvanced
-        window.postMessage({
-            type: 'WHL_RECOVER_NEW_MESSAGE',
-            payload: {
-                ...entrada,
-                action: 'revoked'  // Default para mensagens revogadas
-            },
-            message: entrada,
-            total: historicoRecover.length
-        }, window.location.origin);
+        // CORREÇÃO 5.2: Enviar para background para broadcast
+        try {
+            if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+                chrome.runtime.sendMessage({
+                    type: 'WHL_RECOVER_NEW_MESSAGE',
+                    payload: entrada
+                });
+            }
+        } catch (e) {
+            // Ignorar erros de contexto
+        }
         
         console.log(`[WHL Recover] Mensagem editada de ${entrada.from}: ${entrada.body.substring(0, 50)}...`);
     }
@@ -1594,6 +1669,18 @@ window.whl_hooks_main = () => {
             message: entrada,
             total: historicoRecover.length
         }, window.location.origin);
+        
+        // CORREÇÃO 5.2: Enviar para background para broadcast
+        try {
+            if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+                chrome.runtime.sendMessage({
+                    type: 'WHL_RECOVER_NEW_MESSAGE',
+                    payload: entrada
+                });
+            }
+        } catch (e) {
+            // Ignorar erros de contexto
+        }
         
         console.log(`[WHL Recover] Mensagem recuperada de ${entrada.from}: ${entrada.body.substring(0, 50)}...`);
     }
@@ -1759,9 +1846,60 @@ window.whl_hooks_main = () => {
         }
     }
 
+    // ===== CORREÇÃO 1.1: HOOK PARA MENSAGENS DELETADAS LOCALMENTE =====
+    class DeletedMessageHook extends Hook {
+        register() {
+            if (this.is_registered) return;
+            super.register();
+            
+            // Tentar múltiplos módulos possíveis
+            const storeMod = tryRequireModule('WAWebMsgCollection') || tryRequireModule('WAWebMsgModel');
+            
+            if (!storeMod || !storeMod.Msg) {
+                console.warn('[WHL Hooks] Msg store not available for delete hook');
+                return;
+            }
+            
+            try {
+                // Hook no evento 'remove' da coleção de mensagens
+                storeMod.Msg.on('remove', (msg) => {
+                    DeletedMessageHook.handle_deleted_message(msg);
+                });
+                
+                console.log('[WHL Hooks] DeletedMessageHook registered on Msg.on("remove")');
+            } catch (e) {
+                console.warn('[WHL Hooks] Failed to register delete hook:', e);
+            }
+        }
+        
+        static handle_deleted_message(message) {
+            if (!message) return;
+            
+            // Salvar mensagem apagada no histórico
+            salvarMensagemApagada(message);
+            
+            // Notificar via postMessage para UI
+            try {
+                window.postMessage({
+                    type: 'WHL_MESSAGE_DELETED',
+                    payload: {
+                        chatId: message?.id?.remote || message?.from?._serialized || null,
+                        from: message?.author?._serialized || message?.from?._serialized || null,
+                        ts: Date.now(),
+                        kind: 'deleted',
+                        preview: message?.body || '[mensagem apagada]'
+                    }
+                }, window.location.origin);
+            } catch (e) {
+                console.warn('[WHL Hooks] delete postMessage failed', e);
+            }
+        }
+    }
+
     const hooks = {
         keep_revoked_messages: new RenderableMessageHook(),
         keep_edited_messages: new EditMessageHook(),
+        keep_deleted_messages: new DeletedMessageHook(),
     };
 
     const initialize_modules = () => {

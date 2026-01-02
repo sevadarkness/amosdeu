@@ -118,7 +118,11 @@
       let saved = result[CONFIG.STORAGE_KEY];
       if (typeof saved === 'string') saved = JSON.parse(saved);
       if (Array.isArray(saved)) {
-        state.messages = saved.slice(0, CONFIG.MAX_MESSAGES);
+        // CORREÇÃO 4.1: Aplicar análise de sentimento ao carregar mensagens
+        state.messages = saved.slice(0, CONFIG.MAX_MESSAGES).map(m => ({
+          ...m,
+          sentiment: m.sentiment || (m.body ? analyzeSentiment(m.body) : 'neutral')
+        }));
       }
       
       // Carregar favoritos
@@ -300,6 +304,13 @@
   async function downloadMediaActive(msg) {
     if (!msg) return null;
 
+    // CORREÇÃO 3.2: Verificar cache LRU primeiro
+    const cacheKey = msg.id || msg.msgId || JSON.stringify(msg);
+    if (mediaCache.has(cacheKey)) {
+      console.log('[RecoverAdvanced] 📦 Mídia encontrada no cache');
+      return mediaCache.get(cacheKey);
+    }
+
     // 8.13 - Retry com backoff
     for (let attempt = 0; attempt < CONFIG.RETRY_ATTEMPTS; attempt++) {
       try {
@@ -308,12 +319,17 @@
           const media = await window.Store.DownloadManager.downloadMedia(msg);
           if (media) {
             const base64 = await blobToBase64(media);
-            if (base64) return base64;
+            if (base64) {
+              // CORREÇÃO 3.2: Armazenar no cache
+              mediaCache.set(cacheKey, base64);
+              return base64;
+            }
           }
         }
 
         // Método 2: Via mediaData direto
         if (msg.mediaData && msg.mediaData !== '__HAS_MEDIA__') {
+          mediaCache.set(cacheKey, msg.mediaData);
           return msg.mediaData;
         }
 
@@ -331,7 +347,10 @@
           
           if (response.ok) {
             const data = await response.json();
-            if (data.base64) return data.base64;
+            if (data.base64) {
+              mediaCache.set(cacheKey, data.base64);
+              return data.base64;
+            }
           }
         }
       } catch (e) {
@@ -916,6 +935,9 @@
         filtered = filtered.filter(m => 
           ['image', 'video', 'audio', 'ptt', 'document', 'sticker'].includes(m.type)
         );
+      } else if (state.filters.type === 'favorites') {
+        // CORREÇÃO 2.1: Adicionar filtro de favoritos
+        filtered = filtered.filter(m => state.favorites.has(m.id));
       } else {
         filtered = filtered.filter(m => m.action === state.filters.type);
       }

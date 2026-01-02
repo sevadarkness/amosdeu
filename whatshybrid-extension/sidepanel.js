@@ -1920,10 +1920,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!container) return;
 
     container.innerHTML = result.messages.map(msg => {
-      const date = new Date((msg.timestamp || 0) * 1000).toLocaleString();
+      // CORREÇÃO 2.3: Não multiplicar timestamp por 1000
+      const ts = msg.timestamp || msg.ts || msg.time || Date.now();
+      const date = new Date(ts).toLocaleString('pt-BR');
       const actionIcons = { deleted: '🗑️', revoked: '❌', edited: '✏️' };
       const icon = actionIcons[msg.action] || '📩';
-      const isFav = window.RecoverAdvanced.isFavorite(msg.id);
+      const isFav = window.RecoverAdvanced && window.RecoverAdvanced.isFavorite(msg.id);
       
       return `
         <div class="recover-item" data-id="${msg.id}" style="padding:10px;border-bottom:1px solid rgba(255,255,255,0.1)">
@@ -1947,11 +1949,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const pageInfo = document.getElementById('recover_page_info');
     if (pageInfo) pageInfo.textContent = `Página ${result.page + 1} de ${result.totalPages || 1}`;
 
-    // Botões de paginação
+    // Botões de paginação - CORREÇÃO 2.2: hasMore → hasNext
     const prevBtn = document.getElementById('recover_prev_page');
     const nextBtn = document.getElementById('recover_next_page');
     if (prevBtn) prevBtn.disabled = result.page === 0;
-    if (nextBtn) nextBtn.disabled = !result.hasMore;
+    if (nextBtn) nextBtn.disabled = !result.hasNext;
 
     // Handlers dos botões
     container.querySelectorAll('.recover-fav-btn').forEach(btn => {
@@ -1986,6 +1988,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (revokedEl) revokedEl.textContent = stats.revoked;
     if (deletedEl) deletedEl.textContent = stats.deleted;
     if (editedEl) editedEl.textContent = stats.edited;
+    
+    // CORREÇÃO 4.2: Exibir estatísticas de sentimento
+    const sentimentEl = document.getElementById('recover_sentiment_stats');
+    if (sentimentEl && stats.bySentiment) {
+      sentimentEl.textContent = `🙂 ${stats.bySentiment.positive || 0}  😐 ${stats.bySentiment.neutral || 0}  🙁 ${stats.bySentiment.negative || 0}`;
+    }
   }
 
   // Debounce helper
@@ -2001,6 +2009,29 @@ document.addEventListener('DOMContentLoaded', () => {
   const initRecover = () => {
     if (window.RecoverAdvanced) {
       renderRecoverMessages();
+      
+      // CORREÇÃO 5.1: Adicionar listener para atualizações em tempo real
+      if (typeof chrome !== 'undefined' && chrome.storage?.onChanged) {
+        chrome.storage.onChanged.addListener((changes, namespace) => {
+          if (namespace === 'local' && changes.whl_recover_history) {
+            console.log('[Recover] Histórico atualizado, recarregando...');
+            if (window.RecoverAdvanced) {
+              window.RecoverAdvanced.loadFromStorage();
+              renderRecoverMessages();
+            }
+          }
+        });
+      }
+      
+      // CORREÇÃO 5.4: Listener para mensagens do runtime
+      if (typeof chrome !== 'undefined' && chrome.runtime?.onMessage) {
+        chrome.runtime.onMessage.addListener((message) => {
+          if (message.type === 'WHL_RECOVER_NEW_MESSAGE' && window.RecoverAdvanced) {
+            window.RecoverAdvanced.handleNewMessage(message.payload);
+            renderRecoverMessages();
+          }
+        });
+      }
     } else {
       setTimeout(initRecover, 500);
     }
