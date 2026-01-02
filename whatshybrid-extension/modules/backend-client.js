@@ -372,7 +372,7 @@
       }
 
       const script = document.createElement('script');
-      script.src = 'https://cdn.socket.io/4.7.4/socket.io.min.js';
+      script.src = chrome.runtime.getURL('lib/socket.io.min.js');
       script.onload = resolve;
       script.onerror = reject;
       document.head.appendChild(script);
@@ -642,6 +642,64 @@
   }
 
   // ============================================
+  // SINCRONIZAÇÃO EM TEMPO REAL (v7.5.0)
+  // ============================================
+  
+  // Sincronização de Contatos via Socket
+  function syncContactsRealtime() {
+    if (!state.socket?.connected) return;
+    state.socket.emit('sync:contacts', { timestamp: Date.now() });
+    console.log('[BackendClient] 📇 Sync contatos solicitado');
+  }
+  
+  // Sincronização de Deals via Socket
+  function syncDealsRealtime() {
+    if (!state.socket?.connected) return;
+    state.socket.emit('sync:deals', { timestamp: Date.now() });
+    console.log('[BackendClient] 💰 Sync deals solicitado');
+  }
+  
+  // Sincronização de Tarefas via Socket
+  function syncTasksRealtime() {
+    if (!state.socket?.connected) return;
+    state.socket.emit('sync:tasks', { timestamp: Date.now() });
+    console.log('[BackendClient] ✅ Sync tarefas solicitado');
+  }
+  
+  // Sincronização de Mensagens via Socket
+  function syncMessagesRealtime() {
+    if (!state.socket?.connected) return;
+    state.socket.emit('sync:messages', { timestamp: Date.now() });
+    console.log('[BackendClient] 💬 Sync mensagens solicitado');
+  }
+  
+  // Sincronização completa em tempo real
+  function syncAllRealtime() {
+    if (!state.socket?.connected) return;
+    console.log('[BackendClient] 🔄 Iniciando sincronização completa em tempo real...');
+    syncContactsRealtime();
+    setTimeout(syncDealsRealtime, 500);
+    setTimeout(syncTasksRealtime, 1000);
+    setTimeout(syncMessagesRealtime, 1500);
+  }
+  
+  // Atualizar UI do sidepanel após conexão socket
+  function updateSidepanelSocketUI(connected, message) {
+    const statusEl = document.getElementById('sp_socket_status');
+    if (statusEl) {
+      statusEl.innerHTML = connected 
+        ? '🟢 Conectado' 
+        : '🔴 ' + (message || 'Desconectado');
+      statusEl.style.color = connected ? '#25D366' : '#ea4335';
+    }
+    
+    // Emitir evento para outros módulos
+    if (window.EventBus) {
+      window.EventBus.emit('socket:status', { connected, message });
+    }
+  }
+
+  // ============================================
   // EXPORT
   // ============================================
   window.BackendClient = {
@@ -677,6 +735,14 @@
     syncContacts,
     syncAll,
     
+    // Real-time Sync (v7.5.0)
+    syncContactsRealtime,
+    syncDealsRealtime,
+    syncTasksRealtime,
+    syncMessagesRealtime,
+    syncAllRealtime,
+    updateSidepanelSocketUI,
+    
     // Raw HTTP
     get,
     post,
@@ -699,62 +765,4 @@
     setTimeout(init, 500);
   }
 })();
-
-  // ============================================
-  // SINCRONIZAÇÃO EM TEMPO REAL (v7.5.0)
-  // ============================================
-  
-  // 1.3 - Sincronização de Contatos
-  function syncContacts() {
-    if (!state.socket?.connected) return;
-    state.socket.emit('sync:contacts', { timestamp: Date.now() });
-    console.log('[BackendClient] 📇 Sync contatos solicitado');
-  }
-  
-  // 1.4 - Sincronização de Deals
-  function syncDeals() {
-    if (!state.socket?.connected) return;
-    state.socket.emit('sync:deals', { timestamp: Date.now() });
-    console.log('[BackendClient] 💰 Sync deals solicitado');
-  }
-  
-  // 1.5 - Sincronização de Tarefas
-  function syncTasks() {
-    if (!state.socket?.connected) return;
-    state.socket.emit('sync:tasks', { timestamp: Date.now() });
-    console.log('[BackendClient] ✅ Sync tarefas solicitado');
-  }
-  
-  // 1.6 - Sincronização de Mensagens
-  function syncMessages() {
-    if (!state.socket?.connected) return;
-    state.socket.emit('sync:messages', { timestamp: Date.now() });
-    console.log('[BackendClient] 💬 Sync mensagens solicitado');
-  }
-  
-  // Função para sincronizar tudo após conexão
-  function syncAll() {
-    if (!state.socket?.connected) return;
-    console.log('[BackendClient] 🔄 Iniciando sincronização completa...');
-    syncContacts();
-    setTimeout(syncDeals, 500);
-    setTimeout(syncTasks, 1000);
-    setTimeout(syncMessages, 1500);
-  }
-  
-  // 1.2 - Atualizar UI após conexão
-  function updateSocketUI(connected, message) {
-    const statusEl = document.getElementById('sp_socket_status');
-    if (statusEl) {
-      statusEl.innerHTML = connected 
-        ? '🟢 Conectado' 
-        : '🔴 ' + (message || 'Desconectado');
-      statusEl.style.color = connected ? '#25D366' : '#ea4335';
-    }
-    
-    // Emitir evento para outros módulos
-    if (window.EventBus) {
-      window.EventBus.emit('socket:status', { connected, message });
-    }
-  }
 
