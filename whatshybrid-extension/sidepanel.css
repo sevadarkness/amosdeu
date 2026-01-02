@@ -2647,3 +2647,216 @@ body::before {
   margin-bottom: 16px;
   opacity: 0.5;
 }
+
+/* =========================================
+   RECOVER MODULE UI INTEGRATION STYLES
+   BUG FIXES #1, #2, #3, #5, #6, #7
+=========================================*/
+
+/* BUG 2 & 3: Notifications and Badges */
+.recover-notification {
+  animation: slideIn 0.3s ease-out;
+}
+
+.deletion-type-badge {
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* BUG 7: Progress Bar for DeepScan */
+#recover-progress {
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    max-height: 200px;
+  }
+}
+
+/* Button States for all Recover buttons */
+.recover-btn[disabled],
+button[id^="recover"][disabled],
+button[id*="recover"][disabled] {
+  opacity: 0.6 !important;
+  cursor: not-allowed !important;
+}
+
+.recover-btn:not([disabled]):hover,
+button[id^="recover"]:not([disabled]):hover,
+button[id*="recover"]:not([disabled]):hover {
+  transform: scale(1.02);
+  transition: transform 0.2s;
+}
+
+/* Enhanced toast notifications */
+.recover-toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  background: rgba(0, 0, 0, 0.9);
+  color: white;
+  padding: 12px 20px;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 10000;
+  animation: slideInRight 0.3s ease-out;
+  font-size: 14px;
+  max-width: 300px;
+}
+
+.recover-toast.success {
+  border-left: 4px solid #10b981;
+}
+
+.recover-toast.error {
+  border-left: 4px solid #ef4444;
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(100px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* Progress bar container styles */
+#deepscan-bar {
+  background: linear-gradient(90deg, #8b5cf6, #3b82f6);
+  height: 100%;
+  transition: width 0.3s ease;
+  border-radius: 4px;
+}
+
+#deepscan-status,
+#deepscan-percent {
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 500;
+}
+
+#deepscan-details {
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 8px;
+}
+
+/* SYNC button states */
+#recover_sync_backend[disabled] {
+  background: rgba(107, 114, 128, 0.2) !important;
+  color: rgba(255, 255, 255, 0.5) !important;
+}
+
+#recover_sync_backend:not([disabled]) {
+  background: var(--gradient-primary);
+  transition: all 0.2s ease;
+}
+
+#recover_sync_backend:not([disabled]):hover {
+  box-shadow: 0 4px 15px rgba(139, 92, 246, 0.35);
+  transform: translateY(-1px);
+}
+
+/* Refresh button loading state */
+#sp_refresh_recover[disabled] {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+/* DeepScan button enhanced */
+#recover_deep_scan:not([disabled]) {
+  background: linear-gradient(135deg, #7C3AED 0%, #3B82F6 100%);
+}
+
+#recover_deep_scan:not([disabled]):hover {
+  box-shadow: 0 0 20px rgba(124, 58, 237, 0.4);
+}
+
+/* Media download button in timeline */
+.recover-action-btn[data-action="download-media"] {
+  color: #10b981 !important;
+  transition: all 0.2s;
+}
+
+.recover-action-btn[data-action="download-media"]:hover {
+  color: #059669 !important;
+  transform: scale(1.2);
+}
+
+/* Persistent notification improvements */
+.recover-notification {
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: all 0.2s ease;
+}
+
+.recover-notification:hover {
+  transform: translateX(2px);
+}
+
+/* Deletion type badge hover effect */
+.deletion-type-badge {
+  transition: all 0.2s ease;
+  cursor: default;
+}
+
+.deletion-type-badge:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Responsive adjustments for mobile */
+@media (max-width: 480px) {
+  .recover-notification {
+    font-size: 11px;
+    padding: 6px 10px;
+  }
+  
+  .deletion-type-badge {
+    font-size: 10px;
+    padding: 3px 6px;
+  }
+  
+  #recover-progress {
+    padding: 12px !important;
+    margin: 8px 0 !important;
+  }
+  
+  .recover-toast {
+    bottom: 10px;
+    right: 10px;
+    max-width: 250px;
+    font-size: 12px;
+  }
+}
