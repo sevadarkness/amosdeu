@@ -1585,12 +1585,32 @@ function showView(viewName) {
 
 
 
-  // ========= RECOVER - RENDER TIMELINE COMPLETO v7.5.0 =========
+  // ========= RECOVER - RENDER TIMELINE COMPLETO v7.5.1 - REFACTORED =========
   function renderRecoverTimeline(history) {
     const root = $('sp_recover_timeline');
     if (!root) return;
 
     const slice = (history || []).slice(-MAX_RECOVER_RENDER).reverse();
+    
+    // BUG FIX #7: ANTI-DUPLICAÇÃO - Usar Set para rastrear mensagens já renderizadas
+    const renderedSet = new Set();
+    const uniqueMessages = slice.filter(h => {
+      // Criar chave única baseada em: from + to + body (truncado) + timestamp (arredondado para 5s)
+      const key = `${h?.from || ''}_${h?.to || ''}_${(h?.body || '').substring(0, 50)}_${Math.floor((h?.timestamp || 0) / 5000)}`;
+      
+      if (renderedSet.has(key)) {
+        return false; // Duplicata, ignorar
+      }
+      
+      renderedSet.add(key);
+      return true;
+    });
+    
+    // Empty state
+    if (uniqueMessages.length === 0) {
+      root.innerHTML = '<div class="whl-empty">Nenhuma mensagem recuperada ainda.</div>';
+      return;
+    }
     
     // Helper: Detectar tipo base64
     const isBase64Image = (content) => {
@@ -1622,132 +1642,166 @@ function showView(viewName) {
       return 'text';
     };
     
-    // Emoji de sentimento
-    const sentimentEmoji = (s) => {
-      if (s === 'positive') return '😊';
-      if (s === 'negative') return '😠';
-      return '😐';
-    };
-
-    root.innerHTML = slice.map((h, idx) => {
-      const action = h?.action || h?.type || 'unknown';
+    // FIX #3: renderMediaPreview - Layout horizontal compacto
+    const renderMediaPreview = (h, msgId) => {
       const mediaType = detectMediaType(h);
-      const from = h?.from || 'Desconhecido';
-      const to = h?.to || '';
-      const ts = new Date(h?.timestamp || Date.now());
-      const hh = String(ts.getHours()).padStart(2,'0');
-      const mm = String(ts.getMinutes()).padStart(2,'0');
-      const dateStr = ts.toLocaleDateString('pt-BR');
-      const msgId = h?.id || idx;
-      
-      // Verificar se é favorito
-      const isFav = window.RecoverAdvanced?.isFavorite?.(msgId) || false;
-      const favClass = isFav ? 'active' : '';
-      
-      // Cores e labels por ação
-      const actionStyles = {
-        revoked: { color: '#ef4444', bg: 'rgba(239,68,68,0.1)', icon: '🚫', label: 'Revogada' },
-        deleted: { color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', icon: '🗑️', label: 'Apagada' },
-        edited: { color: '#3b82f6', bg: 'rgba(59,130,246,0.1)', icon: '✏️', label: 'Editada' }
-      };
-      const style = actionStyles[action] || { color: '#6b7280', bg: 'rgba(107,114,128,0.1)', icon: 'ℹ️', label: action };
-      
-      // Sentimento
-      const sentiment = h?.sentiment || 'neutral';
-      const sentEmoji = sentimentEmoji(sentiment);
-      
-      const raw = String(h?.body || h?.message || h?.text || '');
       const mediaData = h?.mediaData || h?.mediaBase64 || h?.media || null;
-      
-      // Renderizar conteúdo baseado no tipo de mídia
-      let contentHtml = '';
       
       if (mediaType === 'image' || mediaType === 'sticker') {
         const dataUrl = mediaData ? toDataUrl(mediaData, h?.mimetype) : null;
         if (dataUrl) {
-          contentHtml = `
-            <div class="recover-media-container" style="margin-top:8px">
-              <img src="${dataUrl}" alt="Imagem" style="max-width:200px;max-height:200px;border-radius:8px;cursor:pointer" onclick="window.open(this.src)"/>
-              <div style="margin-top:6px;display:flex;gap:4px">
-                <button class="recover-action-btn" data-action="download-hd" data-id="${msgId}" title="Download HD">⬇️ HD</button>
-                <button class="recover-action-btn" data-action="ocr" data-id="${msgId}" title="Extrair texto (OCR)">📝 OCR</button>
-              </div>
-            </div>
-            ${raw && raw !== mediaData ? `<p style="margin-top:6px;font-size:12px">${escapeHtml(raw)}</p>` : ''}
-          `;
-        } else {
-          contentHtml = `<p style="color:#6b7280;font-style:italic">🖼️ Imagem não disponível</p>`;
+          return `<img src="${dataUrl}" alt="Imagem" style="width:60px;height:60px;object-fit:cover;border-radius:6px;cursor:pointer" onclick="window.open(this.src)"/>`;
         }
-      } else if (mediaType === 'video') {
-        const duration = h?.duration ? `${Math.floor(h.duration/60)}:${String(h.duration%60).padStart(2,'0')}` : '';
-        const size = h?.size ? `(${(h.size/1024/1024).toFixed(1)}MB)` : '';
-        contentHtml = `
-          <div class="recover-media-container" style="margin-top:8px;padding:12px;background:rgba(139,92,246,0.1);border-radius:8px">
-            <span style="font-size:24px">🎥</span>
-            <span style="margin-left:8px">Vídeo ${duration} ${size}</span>
-          </div>
-        `;
-      } else if (mediaType === 'audio') {
-        if (mediaData && mediaData !== '__HAS_MEDIA__') {
-          const audioUrl = toDataUrl(mediaData, h?.mimetype || 'audio/ogg');
-          contentHtml = `
-            <div class="recover-media-container" style="margin-top:8px">
-              <audio controls style="width:100%;height:40px">
-                <source src="${audioUrl}" type="${h?.mimetype || 'audio/ogg'}">
-              </audio>
-              <button class="recover-action-btn" data-action="transcribe" data-id="${msgId}" style="margin-top:6px" title="Transcrever áudio">🤖 Transcrever IA</button>
-              <div id="transcription_${msgId}" style="margin-top:6px;font-size:11px;color:#10b981;display:none"></div>
-            </div>
-          `;
-        } else {
-          contentHtml = `
-            <div style="padding:10px;background:rgba(16,185,129,0.1);border-radius:8px;margin-top:8px">
-              <span>🎵 Áudio (dados não disponíveis)</span>
-            </div>
-          `;
-        }
-      } else if (mediaType === 'document') {
-        const filename = h?.filename || 'documento';
-        const size = h?.size ? `(${(h.size/1024).toFixed(1)}KB)` : '';
-        contentHtml = `
-          <div style="padding:10px;background:rgba(107,114,128,0.1);border-radius:8px;margin-top:8px;display:flex;align-items:center;gap:8px">
-            <span style="font-size:20px">📄</span>
-            <span>${escapeHtml(filename)} ${size}</span>
-          </div>
-        `;
-      } else {
-        // Texto simples
-        contentHtml = raw ? `<p style="margin-top:6px;word-break:break-word">${escapeHtml(raw)}</p>` : '';
+        return `<div style="width:60px;height:60px;display:flex;align-items:center;justify-content:center;background:rgba(139,92,246,0.2);border-radius:6px;">🖼️</div>`;
       }
       
-      // Se for editada, mostrar botão de comparação
-      const compareBtn = action === 'edited' && h?.previousContent ? 
-        `<button class="recover-action-btn" data-action="compare" data-id="${msgId}" title="Comparar versões">📊 Comparar</button>` : '';
+      if (mediaType === 'audio' || mediaType === 'ptt') {
+        if (mediaData && mediaData !== '__HAS_MEDIA__') {
+          const audioUrl = toDataUrl(mediaData, h?.mimetype || 'audio/ogg');
+          return `
+            <div style="width:100%;max-width:200px;">
+              <audio controls src="${audioUrl}" style="width:100%;height:32px;"></audio>
+              <button class="recover-action-btn" data-action="transcribe" data-id="${msgId}" style="font-size:9px;margin-top:4px;padding:2px 6px;background:rgba(139,92,246,0.2);border:none;border-radius:4px;cursor:pointer;">
+                🎤 Transcrever
+              </button>
+              <div id="transcription_${msgId}" style="font-size:10px;margin-top:4px;color:rgba(255,255,255,0.7);font-style:italic;display:none;"></div>
+            </div>
+          `;
+        }
+        return `<div style="width:60px;height:60px;display:flex;align-items:center;justify-content:center;background:rgba(139,92,246,0.2);border-radius:6px;">🎵</div>`;
+      }
+      
+      if (mediaType === 'video') {
+        return `<div style="width:60px;height:60px;display:flex;align-items:center;justify-content:center;background:rgba(59,130,246,0.2);border-radius:6px;">🎬</div>`;
+      }
+      
+      if (mediaType === 'document') {
+        const filename = h?.filename || 'documento';
+        return `
+          <div style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px;background:rgba(245,158,11,0.1);border-radius:8px;">
+            <div style="font-size:24px;">📄</div>
+            <div style="font-size:10px;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              ${escapeHtml(filename)}
+            </div>
+            <button class="recover-action-btn" data-action="download-media" data-id="${msgId}" style="font-size:9px;padding:2px 8px;background:rgba(245,158,11,0.3);border:none;border-radius:4px;cursor:pointer;">
+              ⬇️ Baixar
+            </button>
+          </div>
+        `;
+      }
+      
+      if (mediaType === 'sticker') {
+        return `<div style="width:60px;height:60px;display:flex;align-items:center;justify-content:center;background:rgba(236,72,153,0.2);border-radius:6px;">🎭</div>`;
+      }
+      
+      // Texto
+      return `<div style="width:60px;height:60px;display:flex;align-items:center;justify-content:center;background:rgba(0,168,132,0.2);border-radius:6px;">💬</div>`;
+    };
+    
+    // Get badge text helper
+    const getBadgeText = (action) => {
+      const labels = {
+        'revoked': 'Revogada',
+        'deleted': 'Apagada',
+        'edited': 'Editada'
+      };
+      return labels[action] || action;
+    };
+    
+    // Format time helper
+    const formatTime = (timestamp) => {
+      if (!timestamp) return '';
+      const ts = new Date(timestamp);
+      const hh = String(ts.getHours()).padStart(2,'0');
+      const mm = String(ts.getMinutes()).padStart(2,'0');
+      const dateStr = ts.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+      return `${dateStr} ${hh}:${mm}`;
+    };
+    
+    // Render action buttons helper
+    const renderActionButtons = (h, msgId) => {
+      let buttons = '';
+      
+      const mediaType = detectMediaType(h);
+      
+      // Botão de download para mídia
+      if (['image', 'video', 'audio', 'ptt', 'document'].includes(mediaType)) {
+        buttons += `<button class="recover-action-btn" data-action="download-media" data-id="${msgId}" title="Baixar em tamanho real" style="background:none;border:none;cursor:pointer;font-size:14px;">⬇️</button>`;
+      }
+      
+      // Botão copiar
+      buttons += `<button class="recover-action-btn" data-action="copy" data-id="${msgId}" title="Copiar" style="background:none;border:none;cursor:pointer;font-size:14px;">📋</button>`;
+      
+      // Botão favoritar
+      const isFav = window.RecoverAdvanced?.isFavorite?.(msgId) || false;
+      buttons += `<button class="recover-fav-btn ${isFav ? 'active' : ''}" data-id="${msgId}" title="Favoritar" style="background:none;border:none;cursor:pointer;font-size:14px;">${isFav ? '⭐' : '☆'}</button>`;
+      
+      // Botão comparar (só para editadas)
+      if (h?.action === 'edited' && h?.previousContent) {
+        buttons += `<button class="recover-action-btn" data-action="compare" data-id="${msgId}" title="Comparar versões" style="background:none;border:none;cursor:pointer;font-size:14px;">📊</button>`;
+      }
+      
+      return buttons;
+    };
 
+    // FIX #3: renderRecoverItem - Layout horizontal compacto
+    root.innerHTML = uniqueMessages.map((h, idx) => {
+      const action = h?.action || h?.type || 'unknown';
+      const from = h?.from || 'Desconhecido';
+      const to = h?.to || '';
+      const msgId = h?.id || idx;
+      const raw = String(h?.body || h?.message || h?.text || '');
+      const mediaType = detectMediaType(h);
+      
+      // Cores e labels por ação - FIX #2: Diferenciar corretamente revoked vs deleted
+      const actionStyles = {
+        'revoked': { color: '#ef4444', bg: 'rgba(239,68,68,0.05)', badgeClass: 'badge-revoked' },
+        'deleted': { color: '#f59e0b', bg: 'rgba(245,158,11,0.05)', badgeClass: 'badge-deleted' },
+        'edited': { color: '#3b82f6', bg: 'rgba(59,130,246,0.05)', badgeClass: 'badge-edited' }
+      };
+      const style = actionStyles[action] || { color: '#6b7280', bg: 'rgba(107,114,128,0.05)', badgeClass: '' };
+      
       return `
-        <div class="timeline-item" style="padding:12px;margin-bottom:8px;background:${style.bg};border-radius:10px;border-left:3px solid ${style.color}" data-msg-id="${msgId}">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
-            <div>
-              <span style="font-size:14px">${style.icon}</span>
-              <span style="font-size:12px;font-weight:600;color:${style.color}">${style.label}</span>
-              <span style="font-size:10px;color:#6b7280;margin-left:6px">${dateStr} ${hh}:${mm}</span>
-            </div>
-            <div style="display:flex;align-items:center;gap:6px">
-              <span title="Sentimento: ${sentiment}">${sentEmoji}</span>
-              <button class="recover-fav-btn ${favClass}" data-id="${msgId}" style="background:none;border:none;cursor:pointer;font-size:16px" title="Favoritar">${isFav ? '⭐' : '☆'}</button>
-            </div>
+        <div class="recover-item" style="
+          display: flex;
+          flex-direction: row;
+          align-items: flex-start;
+          gap: 10px;
+          padding: 10px;
+          border-radius: 8px;
+          background: ${style.bg};
+          margin-bottom: 8px;
+          border-left: 3px solid ${style.color};
+        " data-msg-id="${msgId}">
+          <!-- Coluna esquerda: mídia/ícone (tamanho fixo) -->
+          <div class="recover-media" style="flex-shrink: 0;">
+            ${renderMediaPreview(h, msgId)}
           </div>
           
-          <div style="font-size:11px;color:#6b7280;margin-bottom:4px">
-            <span style="font-weight:500">De:</span> ${escapeHtml(from)}${to ? ` <span style="color:#8b5cf6">→</span> <span style="font-weight:500">Para:</span> ${escapeHtml(to)}` : ''}
-          </div>
-          
-          ${contentHtml}
-          
-          <div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap">
-            <button class="recover-action-btn" data-action="copy" data-id="${msgId}" title="Copiar">📋</button>
-            ${compareBtn}
-            <button class="recover-action-btn" data-action="notify" data-id="${msgId}" title="Alertar este contato">🔔</button>
+          <!-- Coluna direita: info (flex grow) -->
+          <div class="recover-info" style="flex: 1; min-width: 0; overflow: hidden;">
+            <!-- Header: De → Para + Badge -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; flex-wrap: wrap; gap: 4px;">
+              <span style="font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.9);">
+                ${escapeHtml(from)}${to ? ` → ${escapeHtml(to)}` : ''}
+              </span>
+              <span class="${style.badgeClass}" style="font-size: 9px; padding: 2px 6px; border-radius: 4px; white-space: nowrap;">
+                ${getBadgeText(action)}
+              </span>
+            </div>
+            
+            <!-- Body: texto da mensagem (truncado se longo) -->
+            <div style="font-size: 11px; color: rgba(255,255,255,0.8); word-break: break-word; max-height: ${mediaType === 'text' ? '80px' : '60px'}; overflow: hidden; text-overflow: ellipsis;">
+              ${raw ? escapeHtml(raw) : (mediaType !== 'text' ? `[${mediaType}]` : '')}
+            </div>
+            
+            <!-- Footer: timestamp + ações -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 6px; flex-wrap: wrap; gap: 4px;">
+              <span style="font-size: 9px; color: rgba(255,255,255,0.5);">${formatTime(h?.timestamp)}</span>
+              <div class="recover-actions" style="display: flex; gap: 4px;">
+                ${renderActionButtons(h, msgId)}
+              </div>
+            </div>
           </div>
         </div>
       `;
@@ -1771,40 +1825,54 @@ function showView(viewName) {
       
       const action = btn.dataset.action;
       const id = btn.dataset.id;
-      const msg = slice.find(m => (m.id || slice.indexOf(m)) == id);
+      const msg = uniqueMessages.find(m => (m.id || uniqueMessages.indexOf(m)) == id);
       
       switch(action) {
         case 'copy':
-          navigator.clipboard.writeText(msg?.body || '').then(() => alert('Copiado!'));
-          break;
-        case 'download-hd':
-          if (msg?.mediaData) {
-            const a = document.createElement('a');
-            a.href = toDataUrl(msg.mediaData, msg.mimetype);
-            a.download = `recover_${Date.now()}.jpg`;
-            a.click();
+          if (msg?.body) {
+            navigator.clipboard.writeText(msg.body).then(() => showToast('✅ Copiado!'));
           }
           break;
+          
+        case 'download-media':
+          // FIX #10: Download em tamanho real
+          btn.textContent = '⏳';
+          try {
+            if (msg?.mediaData) {
+              const a = document.createElement('a');
+              a.href = toDataUrl(msg.mediaData, msg.mimetype) || '';
+              a.download = `recover_${Date.now()}_${msg.filename || 'media'}`;
+              a.click();
+              showToast('✅ Download concluído!');
+            } else {
+              showToast('❌ Mídia não disponível');
+            }
+          } catch(e) {
+            showToast('❌ Erro ao baixar');
+          }
+          setTimeout(() => { btn.textContent = '⬇️'; }, 1000);
+          break;
+          
         case 'transcribe':
           btn.textContent = '⏳...';
+          btn.disabled = true;
           try {
             const text = await window.RecoverAdvanced?.transcribeAudio?.(msg?.mediaData);
             const div = document.getElementById(`transcription_${id}`);
-            if (div) {
-              div.textContent = text || 'Transcrição não disponível';
+            if (div && text) {
+              div.textContent = `"${text}"`;
               div.style.display = 'block';
+              showToast('✅ Transcrição concluída!');
+            } else {
+              showToast('❌ Transcrição não disponível');
             }
-          } catch(e) {}
-          btn.textContent = '🤖 Transcrever IA';
+          } catch(e) {
+            showToast('❌ Erro na transcrição');
+          }
+          btn.textContent = '🎤 Transcrever';
+          btn.disabled = false;
           break;
-        case 'ocr':
-          btn.textContent = '⏳...';
-          try {
-            const text = await window.RecoverAdvanced?.extractTextFromImage?.(msg?.mediaData);
-            alert(text || 'OCR não disponível');
-          } catch(e) {}
-          btn.textContent = '📝 OCR';
-          break;
+          
         case 'compare':
           const modal = $('recover_compare_modal');
           if (modal && msg) {
@@ -1813,17 +1881,11 @@ function showView(viewName) {
             const diff = window.RecoverAdvanced?.compareEdited?.(id)?.diff;
             if (diff) {
               $('recover_compare_diff').innerHTML = `
-                <b>Removido:</b> <span style="color:#ef4444">${diff.removedText || 'nada'}</span><br>
-                <b>Adicionado:</b> <span style="color:#10b981">${diff.addedText || 'nada'}</span>
+                <b>Removido:</b> <span style="color:#ef4444">${escapeHtml(diff.removedText || 'nada')}</span><br>
+                <b>Adicionado:</b> <span style="color:#10b981">${escapeHtml(diff.addedText || 'nada')}</span>
               `;
             }
             modal.style.display = 'block';
-          }
-          break;
-        case 'notify':
-          if (msg?.from) {
-            window.RecoverAdvanced?.setContactNotification?.(msg.from, true);
-            alert(`Notificações ativadas para ${msg.from}`);
           }
           break;
       }
@@ -1834,6 +1896,23 @@ function showView(viewName) {
     if (closeBtn) {
       closeBtn.onclick = () => { $('recover_compare_modal').style.display = 'none'; };
     }
+  }
+  
+  // Helper para mostrar toast
+  function showToast(message) {
+    // Remover toast antigo se existir
+    const oldToast = document.querySelector('.recover-toast');
+    if (oldToast) oldToast.remove();
+    
+    const toast = document.createElement('div');
+    toast.className = 'recover-toast';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      setTimeout(() => toast.remove(), 300);
+    }, 3000);
   }
 
 
