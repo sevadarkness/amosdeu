@@ -1398,6 +1398,66 @@ function showView(viewName) {
     });
 
     $('sp_download_all_recover')?.addEventListener('click', downloadAllRecover);
+    
+    // FASE 4: Snapshot button
+    $('recover_snapshot')?.addEventListener('click', async () => {
+      const btn = $('recover_snapshot');
+      const st = $('sp_recover_status');
+      if (!btn || !st) return;
+      
+      btn.disabled = true;
+      btn.textContent = '⏳ Capturando...';
+      st.textContent = '📸 Capturando snapshot inicial...';
+      
+      try {
+        const result = await sendToActiveTab({ action: 'performSnapshot' });
+        if (result?.success) {
+          st.textContent = `✅ Snapshot: ${result.totalMessages} msgs de ${result.totalChats} chats`;
+          await recoverRefresh(true);
+        } else {
+          throw new Error(result?.error || 'Falha no snapshot');
+        }
+      } catch (e) {
+        st.textContent = `❌ ${e.message || e}`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '📸 Snapshot';
+      }
+    });
+    
+    // FASE 4: Deep Scan button
+    $('recover_deep_scan')?.addEventListener('click', async () => {
+      const btn = $('recover_deep_scan');
+      const st = $('sp_recover_status');
+      if (!btn || !st) return;
+      
+      if (!confirm('⚠️ Deep Scan pode levar vários minutos e consumir muito processamento.\n\nContinuar?')) return;
+      
+      btn.disabled = true;
+      btn.textContent = '⏳ Escaneando...';
+      st.textContent = '🔬 Iniciando deep scan...';
+      
+      try {
+        const options = {
+          maxMessagesPerChat: 1000,
+          maxIterationsPerChat: 10,
+          delayBetweenLoads: 1000
+        };
+        
+        const result = await sendToActiveTab({ action: 'performDeepScan', options });
+        if (result?.success) {
+          st.textContent = `✅ Deep Scan: ${result.totalScanned} msgs de ${result.totalChatsScanned} chats`;
+          await recoverRefresh(true);
+        } else {
+          throw new Error(result?.error || 'Falha no deep scan');
+        }
+      } catch (e) {
+        st.textContent = `❌ ${e.message || e}`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '🔬 Deep Scan';
+      }
+    });
   }
 
   // Função para baixar todos os recovers como CSV

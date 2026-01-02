@@ -273,8 +273,78 @@
   // PHASE 1: MESSAGE VERSIONS REGISTRY
   // ============================================
   
+  // ============================================
+  // BUG 3: ANTI-DUPLICAÇÃO ROBUSTA
+  // ============================================
+  
+  // Configurable threshold for duplicate detection
+  const DUPLICATE_TIME_THRESHOLD_MS = 5000; // 5 seconds
+  
+  function normalizeContent(content) {
+    if (!content || typeof content !== 'string') return '';
+    return content.trim().toLowerCase().replace(/\s+/g, ' ');
+  }
+  
+  function isDuplicateEvent(msgId, newEvent) {
+    const entry = messageVersions.get(msgId);
+    if (!entry || !entry.history || entry.history.length === 0) return false;
+    
+    const {
+      state: newState,
+      body: newBody,
+      timestamp: newTimestamp
+    } = newEvent;
+    
+    const normalizedNewBody = normalizeContent(newBody);
+    
+    // Check last 3 events for duplicates (most likely to be recent duplicates)
+    const recentEvents = entry.history.slice(-3);
+    
+    for (const existingEvent of recentEvents) {
+      const {
+        state: existingState,
+        body: existingBody,
+        timestamp: existingTimestamp
+      } = existingEvent;
+      
+      // 1. Check if states match
+      if (existingState !== newState) continue;
+      
+      // 2. Check if content matches (normalized)
+      const normalizedExistingBody = normalizeContent(existingBody);
+      if (normalizedExistingBody !== normalizedNewBody) continue;
+      
+      // 3. Check if timestamps are close (configurable threshold)
+      const timeDiff = Math.abs((newTimestamp || 0) - (existingTimestamp || 0));
+      if (timeDiff < DUPLICATE_TIME_THRESHOLD_MS) {
+        console.log('[RecoverAdvanced] Duplicate event detected and ignored:', {
+          msgId,
+          state: newState,
+          timeDiff: `${timeDiff}ms`
+        });
+        return true; // It's a duplicate
+      }
+    }
+    
+    return false; // Not a duplicate
+  }
+  
   function registerMessageEvent(msgData, state, origin = 'unknown') {
     const id = msgData.id || msgData.msgId || Date.now().toString();
+    
+    // BUG 3: Check for duplicates BEFORE adding
+    const newEvent = {
+      state,
+      body: msgData.body || msgData.text || msgData.caption || '',
+      previousBody: msgData.previousBody || msgData.previousContent || null,
+      mediaType: msgData.mediaType || msgData.mimetype || null,
+      mediaDataPreview: msgData.mediaDataPreview || msgData.thumbnail || null,
+      mediaDataFull: null, // Só preenchido quando usuário solicitar
+      transcription: msgData.transcription || null,
+      timestamp: msgData.timestamp || Date.now(),
+      origin,
+      capturedAt: Date.now()
+    };
     
     if (!messageVersions.has(id)) {
       // Criar nova entrada
@@ -292,19 +362,16 @@
     
     const entry = messageVersions.get(id);
     
-    // Adicionar evento ao histórico
-    entry.history.push({
-      state,
-      body: msgData.body || msgData.text || msgData.caption || '',
-      previousBody: msgData.previousBody || msgData.previousContent || null,
-      mediaType: msgData.mediaType || msgData.mimetype || null,
-      mediaDataPreview: msgData.mediaDataPreview || msgData.thumbnail || null,
-      mediaDataFull: null, // Só preenchido quando usuário solicitar
-      transcription: msgData.transcription || null,
-      timestamp: msgData.timestamp || Date.now(),
-      origin,
-      capturedAt: Date.now()
-    });
+    // BUG 3: Only add if not duplicate
+    if (!isDuplicateEvent(id, newEvent)) {
+      // BUG 2: NUNCA sobrescrever - apenas adicionar ao history
+      entry.history.push(newEvent);
+      
+      // BUG 2: Save imediately after each registration
+      saveToStorage().catch(e => {
+        console.warn('[RecoverAdvanced] Falha ao salvar após registrar evento:', e);
+      });
+    }
     
     // Atualizar campos principais se necessário
     if (msgData.from) entry.from = extractPhoneNumber(msgData.from);
@@ -732,6 +799,116 @@
   }
 
   // ============================================
+  // BUG 5: DOWNLOAD FULL-SIZE MEDIA
+  // ============================================
+  async function downloadFullMedia(messageId) {
+    try {
+      const entry = messageVersions.get(messageId);
+      if (!entry) {
+        console.warn('[RecoverAdvanced] Message not found:', messageId);
+        return null;
+      }
+      
+      // Check if already have full media
+      const latestEvent = entry.history[entry.history.length - 1];
+      if (latestEvent?.mediaDataFull) {
+        console.log('[RecoverAdvanced] Full media already cached');
+        return latestEvent.mediaDataFull;
+      }
+      
+      // Try to find the message in Store and download
+      let mediaData = null;
+      
+      // Method 1: Use WHL_RecoverHelpers if available
+      if (window.WHL_RecoverHelpers?.findMessageById) {
+        const msg = await window.WHL_RecoverHelpers.findMessageById(messageId);
+        if (msg) {
+          // Try Store.DownloadManager
+          if (window.Store?.DownloadManager?.downloadMedia) {
+            try {
+              const blob = await window.Store.DownloadManager.downloadMedia(msg);
+              if (blob) {
+                mediaData = await blobToBase64(blob);
+              }
+            } catch (e) {
+              console.warn('[RecoverAdvanced] DownloadManager failed:', e);
+            }
+          }
+          
+          // Fallback: Try getBuffer()
+          if (!mediaData && msg.mediaData && typeof msg.mediaData.getBuffer === 'function') {
+            try {
+              const buffer = await msg.mediaData.getBuffer();
+              if (buffer) {
+                const blob = new Blob([buffer], { type: msg.mimetype || 'application/octet-stream' });
+                mediaData = await blobToBase64(blob);
+              }
+            } catch (e) {
+              console.warn('[RecoverAdvanced] getBuffer failed:', e);
+            }
+          }
+          
+          // Fallback 2: Use directPath if available
+          if (!mediaData && msg.directPath) {
+            try {
+              const response = await fetch(`${CONFIG.BACKEND_URL}/api/media/download`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  directPath: msg.directPath,
+                  mediaKey: msg.mediaKey,
+                  mimetype: msg.mimetype
+                })
+              });
+              
+              if (response.ok) {
+                const data = await response.json();
+                mediaData = data.base64 || null;
+              }
+            } catch (e) {
+              console.warn('[RecoverAdvanced] Backend download failed:', e);
+            }
+          }
+        }
+      }
+      
+      // Save to mediaDataFull in the latest event
+      if (mediaData && latestEvent) {
+        latestEvent.mediaDataFull = mediaData;
+        await saveToStorage();
+        console.log('[RecoverAdvanced] Full media downloaded and saved');
+      }
+      
+      return mediaData;
+    } catch (e) {
+      console.error('[RecoverAdvanced] downloadFullMedia failed:', e);
+      return null;
+    }
+  }
+  
+  // Helper: Save full media to a specific message event
+  async function saveMediaFull(messageId, mediaData) {
+    try {
+      const entry = messageVersions.get(messageId);
+      if (!entry || !entry.history || entry.history.length === 0) {
+        console.warn('[RecoverAdvanced] Cannot save media: message not found');
+        return false;
+      }
+      
+      // Save to the latest event
+      const latestEvent = entry.history[entry.history.length - 1];
+      latestEvent.mediaDataFull = mediaData;
+      
+      await saveToStorage();
+      console.log('[RecoverAdvanced] Full media saved for message:', messageId);
+      return true;
+    } catch (e) {
+      console.error('[RecoverAdvanced] saveMediaFull failed:', e);
+      return false;
+    }
+  }
+
+  // ============================================
   // 8.2 - TRANSCRIÇÃO DE ÁUDIOS
   // ============================================
   async function transcribeAudio(audioBase64) {
@@ -746,6 +923,10 @@
       if (response.ok) {
         const data = await response.json();
         if (data.text) return data.text;
+      } else if (response.status === 404) {
+        console.warn('[RecoverAdvanced] Backend transcription endpoint not available (404)');
+      } else {
+        console.warn('[RecoverAdvanced] Backend transcription failed with status:', response.status);
       }
     } catch (e) {
       console.warn('[RecoverAdvanced] Transcrição via backend falhou:', e.message);
@@ -1439,6 +1620,8 @@
     
     // Mídia
     downloadMediaActive,
+    downloadFullMedia, // BUG 5: Full-size media download
+    saveMediaFull, // BUG 5: Save full media separately
     transcribeAudio,
     extractTextFromImage,
     compressMedia,

@@ -1924,10 +1924,412 @@ window.whl_hooks_main = () => {
         }
     }
 
+    // ===== FASE 3.1: HOOK PARA CRIAÇÃO DE MENSAGENS =====
+    class MessageCreatedHook extends Hook {
+        register() {
+            if (this.is_registered) return;
+            super.register();
+            
+            const storeMod = tryRequireModule('WAWebMsgCollection') || tryRequireModule('WAWebMsgModel');
+            
+            if (!storeMod || !storeMod.Msg) {
+                console.warn('[WHL Hooks] Msg store not available for add hook');
+                return;
+            }
+            
+            try {
+                storeMod.Msg.on('add', (msg) => {
+                    MessageCreatedHook.handle_created_message(msg);
+                });
+                
+                console.log('[WHL Hooks] MessageCreatedHook registered on Msg.on("add")');
+            } catch (e) {
+                console.warn('[WHL Hooks] Failed to register add hook:', e);
+            }
+        }
+        
+        static handle_created_message(message) {
+            if (!message) return;
+            
+            // Cache the message
+            cacheMessage(message);
+            
+            // Notify RecoverAdvanced via postMessage
+            notifyRecoverUI({
+                type: 'WHL_MESSAGE_CREATED',
+                payload: {
+                    id: message?.id?.id || message?.id?._serialized || Date.now().toString(),
+                    chatId: message?.id?.remote || message?.from?._serialized || null,
+                    from: message?.author?._serialized || message?.from?._serialized || null,
+                    to: message?.to?._serialized || message?.id?.remote || null,
+                    body: message?.body || message?.caption || '',
+                    type: message?.type || 'chat',
+                    mediaType: message?.mimetype || null,
+                    timestamp: message?.t || Date.now(),
+                    state: 'created',
+                    origin: 'msg_add_hook'
+                }
+            });
+        }
+    }
+
+    // ===== FASE 3.3: HOOK PARA FALHA DE ENVIO (ACK) =====
+    class MessageFailedHook extends Hook {
+        register() {
+            if (this.is_registered) return;
+            super.register();
+            
+            const storeMod = tryRequireModule('WAWebMsgCollection') || tryRequireModule('WAWebMsgModel');
+            
+            if (!storeMod || !storeMod.Msg) {
+                console.warn('[WHL Hooks] Msg store not available for ack hook');
+                return;
+            }
+            
+            try {
+                storeMod.Msg.on('change:ack', (msg, ack) => {
+                    MessageFailedHook.handle_ack_change(msg, ack);
+                });
+                
+                console.log('[WHL Hooks] MessageFailedHook registered on Msg.on("change:ack")');
+            } catch (e) {
+                console.warn('[WHL Hooks] Failed to register ack hook:', e);
+            }
+        }
+        
+        static handle_ack_change(message, ack) {
+            if (!message) return;
+            
+            // ACK -1 = failed to send
+            if (ack === -1 || ack === '-1') {
+                notifyRecoverUI({
+                    type: 'WHL_MESSAGE_FAILED',
+                    payload: {
+                        id: message?.id?.id || message?.id?._serialized || Date.now().toString(),
+                        chatId: message?.id?.remote || message?.from?._serialized || null,
+                        from: message?.author?._serialized || message?.from?._serialized || null,
+                        to: message?.to?._serialized || message?.id?.remote || null,
+                        body: message?.body || message?.caption || '',
+                        type: message?.type || 'chat',
+                        timestamp: message?.t || Date.now(),
+                        state: 'failed',
+                        ack: ack,
+                        origin: 'ack_change_hook'
+                    }
+                });
+            }
+        }
+    }
+
+    // ===== FASE 3.4: HOOK PARA STATUS (HISTÓRIAS) =====
+    class StatusHook extends Hook {
+        register() {
+            if (this.is_registered) return;
+            super.register();
+            
+            const statusMod = tryRequireModule('WAWebStatusCollection') || tryRequireModule('WAWebStatusStore');
+            
+            if (statusMod && statusMod.StatusStore) {
+                try {
+                    statusMod.StatusStore.on('add', (status) => {
+                        StatusHook.handle_status_published(status);
+                    });
+                    
+                    statusMod.StatusStore.on('remove', (status) => {
+                        StatusHook.handle_status_deleted(status);
+                    });
+                    
+                    console.log('[WHL Hooks] StatusHook registered on StatusStore');
+                } catch (e) {
+                    console.warn('[WHL Hooks] Failed to register status hook:', e);
+                }
+            } else {
+                console.warn('[WHL Hooks] StatusStore not available, skipping status hooks');
+            }
+        }
+        
+        static handle_status_published(status) {
+            if (!status) return;
+            
+            notifyRecoverUI({
+                type: 'WHL_STATUS_PUBLISHED',
+                payload: {
+                    id: status?.id?.id || Date.now().toString(),
+                    from: status?.from?._serialized || status?.author?._serialized || null,
+                    body: status?.body || status?.caption || '[Status]',
+                    type: 'status',
+                    mediaType: status?.mimetype || null,
+                    timestamp: status?.t || Date.now(),
+                    state: 'status_published',
+                    origin: 'status_add_hook'
+                }
+            });
+        }
+        
+        static handle_status_deleted(status) {
+            if (!status) return;
+            
+            notifyRecoverUI({
+                type: 'WHL_STATUS_DELETED',
+                payload: {
+                    id: status?.id?.id || Date.now().toString(),
+                    from: status?.from?._serialized || status?.author?._serialized || null,
+                    body: status?.body || status?.caption || '[Status deletado]',
+                    type: 'status',
+                    timestamp: Date.now(),
+                    state: 'status_deleted',
+                    origin: 'status_remove_hook'
+                }
+            });
+        }
+    }
+
+    // ===== FASE 3.5: NOTIFICAR RECOVER UI =====
+    function notifyRecoverUI(data) {
+        try {
+            // 1. postMessage para content scripts
+            window.postMessage(data, window.location.origin);
+            
+            // 2. chrome.runtime para sidepanel/background
+            if (typeof chrome !== 'undefined' && chrome.runtime?.sendMessage) {
+                chrome.runtime.sendMessage(data).catch((error) => {
+                    // Log different error types for debugging
+                    const errorMsg = error?.message || String(error);
+                    if (errorMsg.includes('Receiving end does not exist')) {
+                        // Expected when no listener is registered - can be ignored
+                        console.debug('[WHL Hooks] No receiver for runtime message (expected)');
+                    } else if (errorMsg.includes('The message port closed')) {
+                        console.warn('[WHL Hooks] Message port closed - listener may have disconnected');
+                    } else {
+                        // Unexpected error - log for debugging
+                        console.warn('[WHL Hooks] Unexpected runtime.sendMessage error:', errorMsg);
+                    }
+                });
+            }
+            
+            // 3. EventBus (se disponível)
+            if (window.EventBus && typeof window.EventBus.emit === 'function') {
+                window.EventBus.emit('recover:new_message', data.payload);
+            }
+            
+            // 4. RecoverAdvanced direto (se disponível)
+            if (window.RecoverAdvanced && typeof window.RecoverAdvanced.addMessage === 'function') {
+                window.RecoverAdvanced.addMessage(data.payload);
+            }
+        } catch (e) {
+            console.warn('[WHL Hooks] notifyRecoverUI failed:', e);
+        }
+    }
+
+    // ===== FASE 4.1: SNAPSHOT INICIAL =====
+    async function performInitialSnapshot() {
+        console.log('[WHL Hooks] Starting initial snapshot...');
+        
+        try {
+            const ChatMod = tryRequireModule('WAWebChatCollection');
+            if (!ChatMod || !ChatMod.ChatCollection) {
+                throw new Error('ChatCollection not available');
+            }
+            
+            const chats = ChatMod.ChatCollection.getModelsArray() || [];
+            let totalMessages = 0;
+            const seenIds = new Set();
+            
+            for (const chat of chats) {
+                if (!chat.msgs || typeof chat.msgs.getModelsArray !== 'function') continue;
+                
+                const messages = chat.msgs.getModelsArray() || [];
+                
+                for (const msg of messages) {
+                    const msgId = msg?.id?.id || msg?.id?._serialized;
+                    if (!msgId || seenIds.has(msgId)) continue;
+                    
+                    seenIds.add(msgId);
+                    totalMessages++;
+                    
+                    // Register as snapshot_initial
+                    notifyRecoverUI({
+                        type: 'WHL_MESSAGE_SNAPSHOT',
+                        payload: {
+                            id: msgId,
+                            chatId: chat?.id?._serialized || null,
+                            from: msg?.author?._serialized || msg?.from?._serialized || null,
+                            to: msg?.to?._serialized || chat?.id?._serialized || null,
+                            body: msg?.body || msg?.caption || '',
+                            type: msg?.type || 'chat',
+                            mediaType: msg?.mimetype || null,
+                            timestamp: msg?.t || Date.now(),
+                            state: 'snapshot_initial',
+                            origin: 'initial_snapshot'
+                        }
+                    });
+                }
+            }
+            
+            console.log(`[WHL Hooks] Initial snapshot complete: ${totalMessages} messages from ${chats.length} chats`);
+            return { success: true, totalMessages, totalChats: chats.length };
+        } catch (e) {
+            console.error('[WHL Hooks] Snapshot failed:', e);
+            return { success: false, error: e.message };
+        }
+    }
+
+    // ===== FASE 4.2: DEEP SCAN =====
+    async function performDeepScan(options = {}) {
+        console.log('[WHL Hooks] Starting deep scan with options:', options);
+        
+        const {
+            chatIds = null, // null = all chats
+            maxMessagesPerChat = 1000,
+            maxIterationsPerChat = 10,
+            delayBetweenLoads = 1000, // Rate limiting: minimum 1 second between loads
+            onProgress = null
+        } = options;
+        
+        // Enforce minimum delay to prevent API abuse
+        const safeDelay = Math.max(delayBetweenLoads, 500); // At least 500ms
+        
+        try {
+            const ChatMod = tryRequireModule('WAWebChatCollection');
+            if (!ChatMod || !ChatMod.ChatCollection) {
+                throw new Error('ChatCollection not available');
+            }
+            
+            let chatsToScan = [];
+            
+            if (chatIds && Array.isArray(chatIds)) {
+                // Scan specific chats
+                for (const chatId of chatIds) {
+                    const chat = ChatMod.ChatCollection.get(chatId);
+                    if (chat) chatsToScan.push(chat);
+                }
+            } else {
+                // Scan all chats
+                chatsToScan = ChatMod.ChatCollection.getModelsArray() || [];
+            }
+            
+            let totalScanned = 0;
+            let totalChatsScanned = 0;
+            let consecutiveFailures = 0; // Track failures for exponential backoff
+            
+            for (const chat of chatsToScan) {
+                if (!chat.msgs) continue;
+                
+                let iterations = 0;
+                let previousCount = 0;
+                
+                while (iterations < maxIterationsPerChat) {
+                    const currentCount = chat.msgs.length || 0;
+                    
+                    if (currentCount >= maxMessagesPerChat || currentCount === previousCount) {
+                        break; // Reached limit or no new messages loaded
+                    }
+                    
+                    // Try to load earlier messages with exponential backoff on failures
+                    try {
+                        if (typeof chat.loadEarlierMsgs === 'function') {
+                            await chat.loadEarlierMsgs();
+                            consecutiveFailures = 0; // Reset on success
+                        }
+                    } catch (e) {
+                        console.warn('[WHL Hooks] loadEarlierMsgs failed for chat:', chat.id?._serialized, e);
+                        consecutiveFailures++;
+                        
+                        // Exponential backoff: wait longer after repeated failures
+                        if (consecutiveFailures > 0) {
+                            const backoffDelay = safeDelay * Math.pow(2, Math.min(consecutiveFailures, 5));
+                            console.log(`[WHL Hooks] Applying backoff: ${backoffDelay}ms after ${consecutiveFailures} failures`);
+                            await new Promise(resolve => setTimeout(resolve, backoffDelay));
+                        }
+                        
+                        break; // Stop loading for this chat after failure
+                    }
+                    
+                    // Register loaded messages
+                    const messages = chat.msgs.getModelsArray() || [];
+                    for (const msg of messages.slice(previousCount)) {
+                        const msgId = msg?.id?.id || msg?.id?._serialized;
+                        if (!msgId) continue;
+                        
+                        notifyRecoverUI({
+                            type: 'WHL_MESSAGE_DEEP_SCAN',
+                            payload: {
+                                id: msgId,
+                                chatId: chat?.id?._serialized || null,
+                                from: msg?.author?._serialized || msg?.from?._serialized || null,
+                                to: msg?.to?._serialized || chat?.id?._serialized || null,
+                                body: msg?.body || msg?.caption || '',
+                                type: msg?.type || 'chat',
+                                mediaType: msg?.mimetype || null,
+                                timestamp: msg?.t || Date.now(),
+                                state: 'snapshot_loaded',
+                                origin: 'deep_scan'
+                            }
+                        });
+                        
+                        totalScanned++;
+                    }
+                    
+                    previousCount = currentCount;
+                    iterations++;
+                    
+                    // Progress callback
+                    if (onProgress && typeof onProgress === 'function') {
+                        onProgress({
+                            chatId: chat.id?._serialized,
+                            chatName: chat.name || 'Unknown',
+                            messagesLoaded: currentCount,
+                            iteration: iterations,
+                            totalScanned
+                        });
+                    }
+                    
+                    // Rate limiting: delay between loads (with backoff if needed)
+                    const effectiveDelay = consecutiveFailures > 0 
+                        ? safeDelay * Math.pow(2, Math.min(consecutiveFailures, 3))
+                        : safeDelay;
+                    await new Promise(resolve => setTimeout(resolve, effectiveDelay));
+                }
+                
+                totalChatsScanned++;
+            }
+            
+            console.log(`[WHL Hooks] Deep scan complete: ${totalScanned} messages from ${totalChatsScanned} chats`);
+            return { success: true, totalScanned, totalChatsScanned };
+        } catch (e) {
+            console.error('[WHL Hooks] Deep scan failed:', e);
+            return { success: false, error: e.message };
+        }
+    }
+
+    // ===== UTILITY: FIND MESSAGE BY ID =====
+    function findMessageById(messageId) {
+        try {
+            const ChatMod = tryRequireModule('WAWebChatCollection');
+            if (!ChatMod || !ChatMod.ChatCollection) return null;
+            
+            const chats = ChatMod.ChatCollection.getModelsArray() || [];
+            
+            for (const chat of chats) {
+                if (!chat.msgs) continue;
+                const msg = chat.msgs.get(messageId);
+                if (msg) return msg;
+            }
+            
+            return null;
+        } catch (e) {
+            console.error('[WHL Hooks] findMessageById failed:', e);
+            return null;
+        }
+    }
+
     const hooks = {
         keep_revoked_messages: new RenderableMessageHook(),
         keep_edited_messages: new EditMessageHook(),
         keep_deleted_messages: new DeletedMessageHook(),
+        message_created: new MessageCreatedHook(),
+        message_failed: new MessageFailedHook(),
+        status_updates: new StatusHook(),
     };
 
     const initialize_modules = () => {
@@ -3647,11 +4049,45 @@ window.whl_hooks_main = () => {
         }
     });
     
+    // ===== FASE 4: MESSAGE HANDLERS FOR SNAPSHOT AND DEEP SCAN =====
+    window.addEventListener('message', async (event) => {
+        if (event.origin !== window.location.origin || event.source !== window) return;
+        
+        if (event.data?.type === 'performSnapshot' || event.data?.action === 'performSnapshot') {
+            try {
+                const result = await performInitialSnapshot();
+                window.postMessage({ type: 'WHL_SNAPSHOT_RESULT', ...result }, window.location.origin);
+            } catch (e) {
+                console.error('[WHL Hooks] Snapshot error:', e);
+                window.postMessage({ type: 'WHL_SNAPSHOT_RESULT', success: false, error: e.message }, window.location.origin);
+            }
+        }
+        
+        if (event.data?.type === 'performDeepScan' || event.data?.action === 'performDeepScan') {
+            try {
+                const options = event.data?.options || {};
+                const result = await performDeepScan(options);
+                window.postMessage({ type: 'WHL_DEEP_SCAN_RESULT', ...result }, window.location.origin);
+            } catch (e) {
+                console.error('[WHL Hooks] Deep scan error:', e);
+                window.postMessage({ type: 'WHL_DEEP_SCAN_RESULT', success: false, error: e.message }, window.location.origin);
+            }
+        }
+    });
+    
     // Expose helper functions for use by sidepanel and other components
     window.WHL_MessageContentHelpers = {
         isBase64Image: isBase64Image,
         toDataUrl: toDataUrl,
         detectMessageType: detectMessageType
+    };
+    
+    // Expose Phase 4 functions for Recover module
+    window.WHL_RecoverHelpers = {
+        performInitialSnapshot: performInitialSnapshot,
+        performDeepScan: performDeepScan,
+        findMessageById: findMessageById,
+        notifyRecoverUI: notifyRecoverUI
     };
 };
 
