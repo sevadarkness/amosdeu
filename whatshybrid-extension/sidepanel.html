@@ -1860,6 +1860,11 @@
         Editadas: <span id="recover_stat_edited">0</span>
       </div>
       
+      <!-- CORREÇÃO 4.2: Estatísticas de sentimento -->
+      <div id="recover_sentiment_stats" class="sp-muted" style="margin-top:6px;font-size:11px">
+        🙂 0  😐 0  🙁 0
+      </div>
+      
       <div id="recover_messages_list" style="margin-top:10px;max-height:300px;overflow-y:auto">
         <!-- Mensagens serão renderizadas aqui -->
       </div>
@@ -1872,7 +1877,8 @@
     </div>
 
 
-    
+    <!-- CORREÇÃO 2.4: Adicionar jsPDF para exportação PDF -->
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 
 </body>
 </html>

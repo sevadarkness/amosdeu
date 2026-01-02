@@ -31,6 +31,17 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
   .then(() => console.log('[WHL Background] ✅ Side panel set to open on action click'))
   .catch(e => console.warn('[WHL Background] setPanelBehavior failed:', e));
 
+// ===== CORREÇÃO 5.3: BROADCAST DE MENSAGENS RECOVER =====
+// Receber mensagens do content script e fazer broadcast para o sidepanel
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === 'WHL_RECOVER_NEW_MESSAGE') {
+    // Broadcast para todos os contextos (incluindo sidepanel)
+    chrome.runtime.sendMessage(message).catch(() => {
+      // Ignorar erros se sidepanel não estiver aberto
+    });
+  }
+});
+
 // ===== CONFIGURATION CONSTANTS =====
 const SEND_MESSAGE_TIMEOUT_MS = 45000; // 45 seconds timeout for message sending
 const NETSNIFFER_CLEANUP_INTERVAL_MS = 300000; // 5 minutes - periodic cleanup to prevent memory leaks
