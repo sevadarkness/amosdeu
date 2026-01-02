@@ -7892,6 +7892,152 @@ if (cmd === 'GET_STATE') {
   }
 
   /**
+   * Send audio file as PTT (Push To Talk)
+   * Replicates the flow of sendImage() but for audio files
+   */
+  async function sendAudioAsPTT(audioData, captionText) {
+    console.log('[WHL] 🎵 Sending audio as PTT');
+
+    try {
+      // Convert base64 to blob
+      const response = await fetch(audioData);
+      const blob = await response.blob();
+
+      // Determine MIME type and extension
+      let mimeType = blob.type || 'audio/ogg';
+      let extension = 'ogg';
+      
+      if (mimeType.includes('mp3') || mimeType.includes('mpeg')) {
+        extension = 'mp3';
+        mimeType = 'audio/mpeg';
+      } else if (mimeType.includes('wav')) {
+        extension = 'wav';
+        mimeType = 'audio/wav';
+      } else if (mimeType.includes('m4a') || mimeType.includes('mp4')) {
+        extension = 'm4a';
+        mimeType = 'audio/mp4';
+      }
+
+      // Create file
+      const file = new File([blob], `audio.${extension}`, { type: mimeType });
+
+      // Find attach button
+      const attachBtn = document.querySelector('[data-testid="attach-clip"]') ||
+                        document.querySelector('[data-testid="clip"]') ||
+                        document.querySelector('span[data-icon="attach-menu-plus"]')?.closest('button') ||
+                        document.querySelector('span[data-icon="clip"]')?.closest('button') ||
+                        document.querySelector('[aria-label="Anexar"]') ||
+                        document.querySelector('[title="Anexar"]');
+      
+      if (!attachBtn) {
+        console.log('[WHL] ❌ Attach button not found');
+        return { ok: false };
+      }
+
+      // Click attach
+      attachBtn.click();
+      await new Promise(r => setTimeout(r, 800));
+
+      // Find and click audio/document option in menu
+      const audioMenuBtn = document.querySelector('[aria-label*="Áudio"]') ||
+                           document.querySelector('[aria-label*="Audio"]') ||
+                           document.querySelector('span[data-icon="audio"]')?.closest('button') ||
+                           document.querySelector('li[title*="Áudio"]') ||
+                           document.querySelector('li[title*="Audio"]');
+      
+      if (audioMenuBtn) {
+        audioMenuBtn.click();
+        await new Promise(r => setTimeout(r, 500));
+      } else {
+        // Fallback: try document option
+        const docMenuBtn = document.querySelector('[aria-label*="Documento"]') ||
+                           document.querySelector('[aria-label*="Document"]') ||
+                           document.querySelector('span[data-icon="document"]')?.closest('button');
+        
+        if (docMenuBtn) {
+          docMenuBtn.click();
+          await new Promise(r => setTimeout(r, 500));
+        } else {
+          console.log('[WHL] ⚠️ Audio/Document menu option not found, trying direct input');
+        }
+      }
+
+      // Find audio input
+      const audioInput = document.querySelector('input[accept*="audio"]') ||
+                         document.querySelector('input[type="file"][accept*="*"]');
+      
+      if (!audioInput) {
+        console.log('[WHL] ❌ Audio input not found');
+        return { ok: false };
+      }
+
+      // Create DataTransfer and set file
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(file);
+      audioInput.files = dataTransfer.files;
+
+      // Trigger change event
+      audioInput.dispatchEvent(new Event('change', { bubbles: true }));
+
+      console.log('[WHL] ✅ Audio attached, waiting for preview');
+      await new Promise(r => setTimeout(r, 1500));
+
+      // Add caption if provided
+      if (captionText && captionText.trim()) {
+        const cap = captionText.trim();
+        let capBox = null;
+        const capSelectors = [
+          'div[aria-label*="legenda"][contenteditable="true"]',
+          'div[aria-label*="Legenda"][contenteditable="true"]',
+          'div[aria-label*="Adicionar"][contenteditable="true"]',
+          'div[aria-label*="caption"][contenteditable="true"]',
+          'div[aria-label*="Caption"][contenteditable="true"]',
+          'footer div[contenteditable="true"]'
+        ];
+        
+        const start = Date.now();
+        while (Date.now() - start < 6000 && !capBox) {
+          for (const sel of capSelectors) {
+            const el = document.querySelector(sel);
+            if (el && el.getAttribute('data-tab') !== '3') { 
+              capBox = el; 
+              break; 
+            }
+          }
+          if (!capBox) await new Promise(r => setTimeout(r, 250));
+        }
+
+        if (capBox) {
+          capBox.focus();
+          await new Promise(r => setTimeout(r, 120));
+          document.execCommand('selectAll', false, null);
+          document.execCommand('delete', false, null);
+          await new Promise(r => setTimeout(r, 80));
+          document.execCommand('insertText', false, cap);
+          capBox.dispatchEvent(new Event('input', { bubbles: true }));
+          console.log('[WHL] ✅ Caption added to audio');
+          await new Promise(r => setTimeout(r, 250));
+        }
+      }
+
+      // Find and click send button
+      const sendBtn = findSendButton();
+
+      if (sendBtn) {
+        sendBtn.click();
+        console.log('[WHL] ✅ Audio sent');
+        return { ok: true };
+      } else {
+        console.log('[WHL] ❌ Send button not found in preview');
+        return { ok: false };
+      }
+    } catch (error) {
+      console.error('[WHL] ❌ Error sending audio:', error);
+      return { ok: false };
+    }
+  }
+
+  /**
    * Converte imagem WebP para JPEG
    * Evita que imagens WebP sejam enviadas como stickers
    */
