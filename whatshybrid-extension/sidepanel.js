@@ -2200,18 +2200,36 @@ document.addEventListener('DOMContentLoaded', () => {
       window.RecoverAdvanced?.exportToPDF?.() || alert('RecoverAdvanced não disponível');
     });
     
-    // ===== SYNC BACKEND =====
+    // FIX #5: SYNC BACKEND - Improved error handling
     const syncBtn = document.getElementById('recover_sync_backend');
     if (syncBtn) {
       syncBtn.addEventListener('click', async () => {
         syncBtn.disabled = true;
-        syncBtn.textContent = '⏳ Sincronizando...';
+        syncBtn.textContent = '⏳ Sync...';
+        
         try {
-          const ok = await window.RecoverAdvanced?.syncWithBackend?.();
-          syncBtn.textContent = ok ? '✅ Sincronizado!' : '⚠️ Falha';
+          // Tentar sincronizar com backend
+          const result = await window.RecoverAdvanced?.syncWithBackend?.();
+          
+          if (result === true) {
+            syncBtn.textContent = '✅ OK!';
+            showToast('✅ Sincronizado com sucesso!');
+          } else if (result === false) {
+            // Backend não disponível, mas não é um erro
+            syncBtn.textContent = 'ℹ️ Offline';
+            showToast('ℹ️ Backend não disponível. Dados salvos localmente.');
+          } else {
+            syncBtn.textContent = '☁️ Sync';
+            showToast('ℹ️ Sync offline. Dados salvos localmente.');
+          }
         } catch(e) {
-          syncBtn.textContent = '❌ Erro';
+          // Não mostrar erro técnico, mostrar mensagem amigável
+          console.log('[Recover] Sync error (expected if no backend):', e);
+          syncBtn.textContent = 'ℹ️ Local';
+          showToast('ℹ️ Sync offline. Dados salvos localmente.');
         }
+        
+        // Restaurar botão após 2 segundos
         setTimeout(() => {
           syncBtn.disabled = false;
           syncBtn.textContent = '☁️ Sync';
@@ -2277,6 +2295,123 @@ document.addEventListener('DOMContentLoaded', () => {
       window.recoverRefresh?.(false);
     });
     
+    // FIX #8: REAL-TIME UPDATES - Setup listeners
+    setupRecoverRealTimeListeners();
+    
     console.log('[Recover] ✅ Handlers configurados');
+  }
+  
+  // FIX #8: Setup Real-Time Listeners for Recover
+  function setupRecoverRealTimeListeners() {
+    console.log('[Recover] Setting up real-time listeners...');
+    
+    // 1. Listener de chrome.runtime messages
+    if (chrome?.runtime?.onMessage) {
+      chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+        if (msg.type === 'WHL_RECOVER_UPDATE') {
+          console.log('[Recover UI] Runtime update received:', msg.event);
+          handleRecoverUpdate(msg.event, msg.data);
+        }
+      });
+    }
+    
+    // 2. Listener de window.postMessage
+    window.addEventListener('message', (e) => {
+      if (e.data?.type === 'WHL_RECOVER_UPDATE' || 
+          e.data?.type === 'WHL_RECOVER_NEW_MESSAGE' ||
+          e.data?.type === 'WHL_RECOVERED_MESSAGE' ||
+          e.data?.type === 'WHL_MESSAGE_DELETED' ||
+          e.data?.type === 'WHL_MESSAGE_EDITED') {
+        console.log('[Recover UI] PostMessage update:', e.data.type);
+        handleRecoverUpdate(e.data.type, e.data.payload || e.data);
+      }
+    });
+    
+    // 3. Listener de EventBus
+    if (window.EventBus) {
+      window.EventBus.on('recover:message_added', (msg) => {
+        handleRecoverUpdate('message_added', msg);
+      });
+      window.EventBus.on('recover:message_removed', (msg) => {
+        handleRecoverUpdate('message_removed', msg);
+      });
+      window.EventBus.on('recover:message_edited', (msg) => {
+        handleRecoverUpdate('message_edited', msg);
+      });
+    }
+    
+    // 4. Polling fallback - verificar a cada 3 segundos
+    // CODE REVIEW FIX: Store interval ID for cleanup
+    if (window._recoverPollingInterval) {
+      clearInterval(window._recoverPollingInterval);
+    }
+    
+    window._recoverPollingInterval = setInterval(() => {
+      // Only poll if recover view is active
+      const recoverView = document.getElementById('whlViewRecover');
+      if (!recoverView || recoverView.classList.contains('hidden')) {
+        return;
+      }
+      
+      const currentCount = window.RecoverAdvanced?.getMessages?.()?.length || 0;
+      const displayedTotalEl = document.getElementById('sp_recover_total');
+      const displayedCount = parseInt(displayedTotalEl?.textContent || '0');
+      
+      if (currentCount !== displayedCount) {
+        console.log('[Recover UI] Polling detected change:', displayedCount, '->', currentCount);
+        if (typeof window.recoverRefresh === 'function') {
+          window.recoverRefresh(false);
+        }
+      }
+    }, 3000);
+    
+    console.log('[Recover] ✅ Real-time listeners configurados');
+  }
+  
+  function handleRecoverUpdate(event, data) {
+    // Verificar se estamos na aba recover
+    const recoverView = document.getElementById('whlViewRecover');
+    if (!recoverView || recoverView.classList.contains('hidden')) {
+      return; // Não atualizar se não estiver visível
+    }
+    
+    console.log('[Recover UI] Handling update:', event, data);
+    
+    // Adicionar nova mensagem no TOPO sem recarregar tudo
+    if (event === 'message_added' || event === 'message_removed' || event === 'message_edited' ||
+        event === 'WHL_RECOVER_NEW_MESSAGE' || event === 'WHL_RECOVERED_MESSAGE' || 
+        event === 'WHL_MESSAGE_DELETED' || event === 'WHL_MESSAGE_EDITED') {
+      
+      // Re-renderizar timeline
+      if (typeof window.recoverRefresh === 'function') {
+        window.recoverRefresh(false);
+      }
+      
+      // Highlight visual na primeira mensagem
+      setTimeout(() => {
+        const container = document.getElementById('sp_recover_timeline');
+        if (container?.firstElementChild) {
+          container.firstElementChild.classList.add('recover-item-new');
+          setTimeout(() => {
+            container.firstElementChild?.classList.remove('recover-item-new');
+          }, 3000);
+        }
+      }, 100);
+      
+      // Toast notification
+      if (typeof showToast === 'function') {
+        const actionLabels = {
+          'message_added': '💬 Nova mensagem recuperada',
+          'WHL_RECOVER_NEW_MESSAGE': '💬 Nova mensagem recuperada',
+          'WHL_RECOVERED_MESSAGE': '🚫 Mensagem revogada recuperada',
+          'WHL_MESSAGE_DELETED': '🗑️ Mensagem apagada recuperada',
+          'WHL_MESSAGE_EDITED': '✏️ Mensagem editada detectada',
+          'message_edited': '✏️ Mensagem editada',
+          'message_removed': '🗑️ Mensagem removida'
+        };
+        const label = actionLabels[event] || 'Atualização';
+        showToast(label);
+      }
+    }
   }
 })();
