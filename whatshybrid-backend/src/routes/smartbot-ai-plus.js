@@ -116,10 +116,19 @@ router.post('/summarizer/needs-summary', async (req, res) => {
   }
 });
 
-// Clear cache
-router.delete('/summarizer/cache/:chatId?', async (req, res) => {
+// Clear cache (for specific chat or all)
+router.delete('/summarizer/cache/:chatId', async (req, res) => {
   try {
     getService().summarizer.clearCache(req.params.chatId);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.delete('/summarizer/cache', async (req, res) => {
+  try {
+    getService().summarizer.clearCache();
     res.json({ success: true });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -385,8 +394,8 @@ router.post('/scheduler/record', async (req, res) => {
   }
 });
 
-// Get best times
-router.get('/scheduler/best-times/:chatId?', async (req, res) => {
+// Get best times (for specific chat or general)
+router.get('/scheduler/best-times/:chatId', async (req, res) => {
   try {
     const bestTimes = getService().smartScheduler.getBestTimes(req.params.chatId);
     res.json(bestTimes);
@@ -395,10 +404,28 @@ router.get('/scheduler/best-times/:chatId?', async (req, res) => {
   }
 });
 
-// Get next best time
-router.get('/scheduler/next/:chatId?', async (req, res) => {
+router.get('/scheduler/best-times', async (req, res) => {
+  try {
+    const bestTimes = getService().smartScheduler.getBestTimes();
+    res.json(bestTimes);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get next best time (for specific chat or general)
+router.get('/scheduler/next/:chatId', async (req, res) => {
   try {
     const nextTime = getService().smartScheduler.getNextBestTime(req.params.chatId);
+    res.json(nextTime);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/scheduler/next', async (req, res) => {
+  try {
+    const nextTime = getService().smartScheduler.getNextBestTime();
     res.json(nextTime);
   } catch (error) {
     res.status(500).json({ error: error.message });
