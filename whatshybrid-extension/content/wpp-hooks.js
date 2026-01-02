@@ -1421,6 +1421,15 @@ window.whl_hooks_main = () => {
             timestamp: Date.now()
         };
         
+        // PHASE 2: Usar novo sistema de versões via RecoverAdvanced
+        if (window.RecoverAdvanced?.registerMessageEvent) {
+            window.RecoverAdvanced.registerMessageEvent(
+                entrada,
+                window.RecoverAdvanced.MESSAGE_STATES.DELETED_LOCAL,
+                'wpp_hooks_delete'
+            );
+        }
+        
         historicoRecover.push(entrada);
         
         // Aplicar limites
@@ -1491,10 +1500,20 @@ window.whl_hooks_main = () => {
             type: 'chat',
             action: 'edited',
             previousContent: previousContent,
+            previousBody: previousContent, // PHASE 2: Add for compatibility
             timestamp: Date.now()
         };
         
         console.log('[WHL Recover] ✏️ Salvando mensagem editada:', entrada);
+        
+        // PHASE 2: Usar novo sistema de versões via RecoverAdvanced
+        if (window.RecoverAdvanced?.registerMessageEvent) {
+            window.RecoverAdvanced.registerMessageEvent(
+                entrada,
+                window.RecoverAdvanced.MESSAGE_STATES.EDITED,
+                'wpp_hooks_edit'
+            );
+        }
         
         historicoRecover.push(entrada);
         
@@ -1622,6 +1641,15 @@ window.whl_hooks_main = () => {
         };
         
         console.log('[WHL Recover] 📝 Salvando:', entrada.mediaData ? `[MÍDIA:${entrada.mediaType}]` : entrada.body?.substring(0, 30));
+        
+        // PHASE 2: Usar novo sistema de versões via RecoverAdvanced
+        if (window.RecoverAdvanced?.registerMessageEvent) {
+            window.RecoverAdvanced.registerMessageEvent(
+                entrada,
+                window.RecoverAdvanced.MESSAGE_STATES.REVOKED_GLOBAL,
+                'wpp_hooks_revoke'
+            );
+        }
         
         historicoRecover.push(entrada);
         
