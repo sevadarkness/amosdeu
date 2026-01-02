@@ -19,7 +19,7 @@
     NOTIFICATIONS_KEY: 'whl_recover_notifications',
     RETRY_ATTEMPTS: 3,           // 8.13 - Retry com backoff
     RETRY_DELAYS: [1000, 2000, 4000],
-    BACKEND_URL: 'http://localhost:4000'
+    BACKEND_URL: 'http://localhost:3000'
   };
 
   // ============================================

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "WhatsHybrid Pro",
-  "version": "7.5.5",
+  "version": "7.6.0",
   "description": "WhatsHybrid v7.2 SmartBot IA — Análise avançada de contexto, priorização inteligente, aprendizado contínuo, métricas com detecção de anomalias. Backend API + AIService + CopilotEngine.",
   "icons": {
     "16": "icons/16.png",
