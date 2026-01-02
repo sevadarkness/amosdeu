@@ -148,16 +148,35 @@
       // Usar chrome.storage.local para compartilhar entre contextos
       const result = await new Promise(resolve => {
         if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-          chrome.storage.local.get([CONFIG.STORAGE_KEY, CONFIG.FAVORITES_KEY, CONFIG.NOTIFICATIONS_KEY], resolve);
+          chrome.storage.local.get([CONFIG.STORAGE_KEY, CONFIG.FAVORITES_KEY, CONFIG.NOTIFICATIONS_KEY, 'whl_message_versions'], resolve);
         } else {
           // Fallback para localStorage (content script)
           resolve({
             [CONFIG.STORAGE_KEY]: localStorage.getItem(CONFIG.STORAGE_KEY),
             [CONFIG.FAVORITES_KEY]: localStorage.getItem(CONFIG.FAVORITES_KEY),
-            [CONFIG.NOTIFICATIONS_KEY]: localStorage.getItem(CONFIG.NOTIFICATIONS_KEY)
+            [CONFIG.NOTIFICATIONS_KEY]: localStorage.getItem(CONFIG.NOTIFICATIONS_KEY),
+            'whl_message_versions': localStorage.getItem('whl_message_versions')
           });
         }
       });
+      
+      // PHASE 1: Carregar messageVersions primeiro
+      let versionsData = result['whl_message_versions'];
+      if (typeof versionsData === 'string') {
+        try {
+          versionsData = JSON.parse(versionsData);
+        } catch (e) {
+          console.warn('[RecoverAdvanced] Erro ao parsear messageVersions:', e);
+          versionsData = null;
+        }
+      }
+      if (versionsData && typeof versionsData === 'object') {
+        // Restaurar Map de messageVersions
+        Object.entries(versionsData).forEach(([id, entry]) => {
+          messageVersions.set(id, entry);
+        });
+        console.log('[RecoverAdvanced] ✅ messageVersions carregado:', messageVersions.size, 'entradas');
+      }
       
       // Carregar histórico
       let saved = result[CONFIG.STORAGE_KEY];
@@ -215,10 +234,18 @@
     try {
       // Limitar tamanho
       const toSave = state.messages.slice(0, CONFIG.MAX_MESSAGES);
+      
+      // PHASE 1: Converter messageVersions Map para objeto serializável
+      const versionsToSave = {};
+      messageVersions.forEach((entry, id) => {
+        versionsToSave[id] = entry;
+      });
+      
       const data = {
         [CONFIG.STORAGE_KEY]: toSave,
         [CONFIG.FAVORITES_KEY]: [...state.favorites],
-        [CONFIG.NOTIFICATIONS_KEY]: [...state.contactNotifications]
+        [CONFIG.NOTIFICATIONS_KEY]: [...state.contactNotifications],
+        'whl_message_versions': versionsToSave
       };
       
       if (typeof chrome !== 'undefined' && chrome.storage?.local) {
@@ -228,6 +255,7 @@
         localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(toSave));
         localStorage.setItem(CONFIG.FAVORITES_KEY, JSON.stringify([...state.favorites]));
         localStorage.setItem(CONFIG.NOTIFICATIONS_KEY, JSON.stringify([...state.contactNotifications]));
+        localStorage.setItem('whl_message_versions', JSON.stringify(versionsToSave));
       }
     } catch (e) {
       console.warn('[RecoverAdvanced] Erro ao salvar storage:', e);
@@ -619,29 +647,53 @@
     if (state.cachedOwner) return state.cachedOwner;
     
     try {
-      // Tentar obter do Store
-      if (window.Store?.Conn?.me) {
-        state.cachedOwner = cleanPhoneNumber(window.Store.Conn.me);
+      // Método 1: Store.Conn.me._serialized
+      if (window.Store?.Conn?.me?._serialized) {
+        state.cachedOwner = cleanPhoneNumber(window.Store.Conn.me._serialized);
         return state.cachedOwner;
       }
       
-      // Tentar do localStorage
-      const stored = localStorage.getItem('last-wid-md') || localStorage.getItem('last-wid');
-      if (stored) {
+      // Método 2: Store.Conn.wid._serialized
+      if (window.Store?.Conn?.wid?._serialized) {
+        state.cachedOwner = cleanPhoneNumber(window.Store.Conn.wid._serialized);
+        return state.cachedOwner;
+      }
+      
+      // Método 3: localStorage - last-wid-md
+      const storedMd = localStorage.getItem('last-wid-md');
+      if (storedMd) {
         try {
-          const parsed = JSON.parse(stored);
-          state.cachedOwner = cleanPhoneNumber(parsed);
-          return state.cachedOwner;
+          const parsed = JSON.parse(storedMd);
+          const phoneNumber = cleanPhoneNumber(parsed._serialized || parsed);
+          if (isValidPhoneNumber(phoneNumber)) {
+            state.cachedOwner = phoneNumber;
+            return state.cachedOwner;
+          }
         } catch (e) {
-          console.warn('[RecoverAdvanced] Erro ao parsear owner do localStorage:', e);
+          console.warn('[RecoverAdvanced] Erro ao parsear last-wid-md:', e);
         }
       }
       
-      // Tentar do DOM
+      // Método 4: localStorage - last-wid
+      const stored = localStorage.getItem('last-wid');
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored);
+          const phoneNumber = cleanPhoneNumber(parsed._serialized || parsed);
+          if (isValidPhoneNumber(phoneNumber)) {
+            state.cachedOwner = phoneNumber;
+            return state.cachedOwner;
+          }
+        } catch (e) {
+          console.warn('[RecoverAdvanced] Erro ao parsear last-wid:', e);
+        }
+      }
+      
+      // Método 5: Tentar do DOM
       const profileEl = document.querySelector('[data-testid="chatlist-header"] img');
       if (profileEl?.src) {
         const match = profileEl.src.match(/u=(\d+)/);
-        if (match) {
+        if (match && isValidPhoneNumber(match[1])) {
           state.cachedOwner = match[1];
           return state.cachedOwner;
         }
@@ -1583,6 +1635,14 @@
     // PHASE 1: Message Versions API
     registerMessageEvent,
     getMessageHistory,
+    getMessageVersions: () => {
+      // Retornar cópia do Map como objeto
+      const result = {};
+      messageVersions.forEach((entry, id) => {
+        result[id] = entry;
+      });
+      return result;
+    },
     getCurrentState,
     isInRevokedUniverse,
     getRevokedUniverseMessages,
