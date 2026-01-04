@@ -493,19 +493,21 @@
         'bom dia', 'boa tarde', 'boa noite',
         'eae', 'eai', 'fala', 'salve',
         'hey', 'hi', 'hello',
-        'opa', 'opaa', 'e aí', 'e ai'
+        'opa', 'opaa', 'e aí', 'e ai',
+        'blz', 'beleza', 'td bem', 'tudo bem'
       ];
       
       const normalized = (message || '').toLowerCase().trim();
       
-      // Match exato ou começa com saudação + espaço/pontuação
-      return greetings.some(g => 
-        normalized === g || 
-        normalized.startsWith(g + ' ') ||
-        normalized.startsWith(g + ',') ||
-        normalized.startsWith(g + '!') ||
-        normalized.startsWith(g + '?')
-      );
+      // Match exato ou começa com saudação + separador
+      return greetings.some(g => {
+        if (normalized === g) return true;
+        if (normalized.startsWith(g)) {
+          const nextChar = normalized.charAt(g.length);
+          return /[\s,!?.]/.test(nextChar);
+        }
+        return false;
+      });
     }
 
     /**

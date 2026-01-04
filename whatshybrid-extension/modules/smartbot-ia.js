@@ -919,7 +919,7 @@
       
       // Verifica se já existe padrão similar
       const existingPattern = this.learnedPatterns.find(p => 
-        p.triggers.some(t => text.includes(t.toLowerCase()))
+        p.triggers.some(t => text.includes(t))
       );
       
       if (existingPattern) {
@@ -931,14 +931,16 @@
         console.log('[Learning] 📈 Padrão atualizado:', existingPattern.triggers[0], 'conf:', existingPattern.confidence);
       } else if (interaction.confidence >= 80) {
         // Cria novo padrão apenas se confiança alta
+        // Extrai e converte triggers para lowercase
         const words = text
           .split(/\s+/)
           .filter(w => w.length > 3)
-          .slice(0, 5);
+          .slice(0, 5)
+          .map(w => w.toLowerCase());
         
         if (words.length >= 2) {
           this.learnedPatterns.push({
-            triggers: words,
+            triggers: words, // Já em lowercase
             response: interaction.response,
             intent: interaction.intent || 'general',
             confidence: 70,
