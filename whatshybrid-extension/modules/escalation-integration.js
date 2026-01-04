@@ -244,9 +244,9 @@
        */
       getEscalationStatus(chatId) {
         // Procura ticket ativo para o chat
-        const tickets = escalation.listTickets({ 
-          status: ['open', 'assigned', 'in_progress'] 
-        });
+        const allTickets = escalation.listTickets();
+        const activeStatuses = ['open', 'assigned', 'in_progress'];
+        const tickets = allTickets.filter(t => activeStatuses.includes(t.status));
         
         const chatTickets = tickets.filter(t => t.chatId === chatId);
         

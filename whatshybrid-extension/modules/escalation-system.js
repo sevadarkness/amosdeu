@@ -360,7 +360,7 @@
             if (analysis.confidence >= condition.value) return false;
             break;
           case 'keyword':
-            if (!message.text.toLowerCase().includes(condition.value.toLowerCase())) return false;
+            if (!message.text || !message.text.toLowerCase().includes(condition.value.toLowerCase())) return false;
             break;
           case 'time_range':
             const hour = new Date().getHours();
@@ -605,6 +605,10 @@
         if (!webhook.enabled) continue;
         if (webhook.events.includes('all') || webhook.events.includes(event)) {
           try {
+            // Add timeout to prevent hanging
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+            
             await fetch(webhook.url, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -613,10 +617,17 @@
                 message,
                 data,
                 timestamp: Date.now()
-              })
+              }),
+              signal: controller.signal
             });
+            
+            clearTimeout(timeoutId);
           } catch (error) {
-            console.error('[Escalation] Erro no webhook:', error);
+            if (error.name === 'AbortError') {
+              console.error('[Escalation] Timeout no webhook:', webhook.url);
+            } else {
+              console.error('[Escalation] Erro no webhook:', error);
+            }
           }
         }
       }
@@ -655,8 +666,13 @@
           .filter(t => t.sla.actualResolutionTime)
           .reduce((sum, t) => sum + t.sla.actualResolutionTime, 0);
         
-        this.metrics.avgResponseTime = totalResponseTime / resolved.filter(t => t.sla.actualResponseTime).length || 0;
-        this.metrics.avgResolutionTime = totalResolutionTime / resolved.length || 0;
+        const resolvedWithResponseTime = resolved.filter(t => t.sla.actualResponseTime);
+        this.metrics.avgResponseTime = resolvedWithResponseTime.length > 0 
+          ? totalResponseTime / resolvedWithResponseTime.length 
+          : 0;
+        this.metrics.avgResolutionTime = resolved.length > 0 
+          ? totalResolutionTime / resolved.length 
+          : 0;
       }
     }
 
@@ -738,16 +754,26 @@
      * Carregar fila
      */
     async loadQueue() {
-      return new Promise(resolve => {
-        chrome.storage.local.get(['escalation_queue', 'escalation_metrics'], result => {
-          if (result.escalation_queue) {
-            this.queue = new Map(Object.entries(result.escalation_queue));
-          }
-          if (result.escalation_metrics) {
-            this.metrics = { ...this.metrics, ...result.escalation_metrics };
-          }
-          resolve();
-        });
+      return new Promise((resolve, reject) => {
+        try {
+          chrome.storage.local.get(['escalation_queue', 'escalation_metrics'], result => {
+            if (chrome.runtime.lastError) {
+              console.error('[Escalation] Erro ao carregar fila:', chrome.runtime.lastError);
+              resolve(); // Resolve anyway to continue initialization
+              return;
+            }
+            if (result.escalation_queue) {
+              this.queue = new Map(Object.entries(result.escalation_queue));
+            }
+            if (result.escalation_metrics) {
+              this.metrics = { ...this.metrics, ...result.escalation_metrics };
+            }
+            resolve();
+          });
+        } catch (error) {
+          console.error('[Escalation] Erro inesperado ao carregar fila:', error);
+          resolve(); // Resolve anyway to continue initialization
+        }
       });
     }
 
