@@ -1312,6 +1312,8 @@
       this.metricsSystem = new SmartMetricsSystem();
       
       this.initialized = false;
+      this.conversationHistory = new Map();
+      this.customIntents = {};
       this.callbacks = {
         onSuggestion: null,
         onAnalysis: null,
@@ -1651,6 +1653,623 @@
           error: error.message
         };
       }
+    }
+
+    /**
+     * Configura respostas por intenção (8 intents)
+     */
+    setupIntentResponses() {
+      return {
+        greeting: {
+          responses: [
+            'Olá! Como posso ajudar você hoje?',
+            'Oi! Em que posso ser útil?',
+            'Olá! Seja bem-vindo(a)!',
+            'Oi! Estou aqui para ajudar.'
+          ],
+          confidence: 0.9
+        },
+        farewell: {
+          responses: [
+            'Até logo! Foi um prazer ajudar.',
+            'Tchau! Estou à disposição.',
+            'Até mais! Tenha um ótimo dia.',
+            'Até breve! Pode contar comigo sempre.'
+          ],
+          confidence: 0.9
+        },
+        thanks: {
+          responses: [
+            'Por nada! Foi um prazer ajudar.',
+            'Disponha! Estou aqui sempre que precisar.',
+            'De nada! Fico feliz em poder ajudar.',
+            'Sem problemas! É sempre bom poder ajudar.'
+          ],
+          confidence: 0.85
+        },
+        question: {
+          responses: [
+            'Boa pergunta! Deixe-me verificar isso para você.',
+            'Vou buscar essa informação para você.',
+            'Interessante! Vou te responder em instantes.',
+            'Deixe-me consultar e já te respondo.'
+          ],
+          confidence: 0.7
+        },
+        request: {
+          responses: [
+            'Claro! Vou providenciar isso para você.',
+            'Com certeza! Estou trabalhando nisso.',
+            'Pode deixar! Já estou cuidando disso.',
+            'Certamente! Vou resolver isso agora.'
+          ],
+          confidence: 0.75
+        },
+        confirmation: {
+          responses: [
+            'Perfeito! Vamos prosseguir então.',
+            'Ótimo! Confirmado.',
+            'Entendido! Vou seguir com isso.',
+            'Certo! Tudo confirmado.'
+          ],
+          confidence: 0.85
+        },
+        complaint: {
+          responses: [
+            'Lamento muito pelo ocorrido. Vou resolver isso para você.',
+            'Entendo sua preocupação. Vamos solucionar isso juntos.',
+            'Peço desculpas pelo transtorno. Vou verificar isso imediatamente.',
+            'Compreendo sua situação. Vou dar prioridade a isso.'
+          ],
+          confidence: 0.8
+        },
+        other: {
+          responses: [
+            'Entendi. Como posso ajudar com isso?',
+            'Compreendo. Vou analisar sua solicitação.',
+            'Certo. Deixe-me verificar a melhor forma de ajudar.',
+            'Entendido. Vou processar sua mensagem.'
+          ],
+          confidence: 0.6
+        }
+      };
+    }
+
+    /**
+     * Configura ajustes de sentimento
+     */
+    setupSentimentAdjustments() {
+      return {
+        positive: {
+          prefix: '',
+          suffix: ' 😊',
+          toneBoost: 1.2,
+          emojiFrequency: 0.7
+        },
+        negative: {
+          prefix: 'Entendo sua preocupação. ',
+          suffix: '',
+          toneBoost: 0.8,
+          emojiFrequency: 0.1
+        },
+        neutral: {
+          prefix: '',
+          suffix: '',
+          toneBoost: 1.0,
+          emojiFrequency: 0.3
+        }
+      };
+    }
+
+    /**
+     * Analisa urgência de uma mensagem (0-100)
+     */
+    analyzeUrgency(text, sentiment, intent) {
+      if (!text) return { score: 0, level: 'low' };
+
+      let score = 0;
+      const lowerText = text.toLowerCase();
+
+      // Palavras urgentes
+      const urgentKeywords = ['urgente', 'emergência', 'agora', 'imediato', 'já', 'rápido', 'socorro', 'ajuda', 'crítico'];
+      urgentKeywords.forEach(keyword => {
+        if (lowerText.includes(keyword)) score += 20;
+      });
+
+      // Exclamações múltiplas
+      const exclamations = (text.match(/!/g) || []).length;
+      score += Math.min(exclamations * 10, 30);
+
+      // CAPS LOCK
+      const upperCount = (text.match(/[A-Z]/g) || []).length;
+      const letterCount = (text.match(/[a-zA-Z]/g) || []).length;
+      if (letterCount > 5 && upperCount / letterCount > 0.5) {
+        score += 20;
+      }
+
+      // Sentimento negativo
+      if (sentiment && sentiment.sentiment === 'negative') {
+        score += 15;
+      }
+
+      // Intenção de reclamação
+      if (intent && (intent.primaryIntent === 'complaint' || intent.allIntents.includes('complaint'))) {
+        score += 15;
+      }
+
+      // Múltiplas perguntas
+      const questions = (text.match(/\?/g) || []).length;
+      if (questions > 1) score += 10;
+
+      score = Math.min(score, 100);
+
+      // Define nível
+      let level = 'low';
+      if (score >= 70) level = 'high';
+      else if (score >= 40) level = 'medium';
+
+      return { score, level };
+    }
+
+    /**
+     * Árvore de decisão para ações
+     */
+    decideAction(message, analysis) {
+      const { sentiment, intent, urgency } = analysis;
+
+      // 1. Alta urgência + reclamação = escala para humano
+      if (urgency.score >= 70 || intent.primaryIntent === 'complaint') {
+        return { action: 'escalate', reason: 'high_urgency_or_complaint', confidence: 0.9 };
+      }
+
+      // 2. Fora do horário comercial = enfileira
+      if (!this.isBusinessHours()) {
+        return { action: 'queue', reason: 'outside_business_hours', confidence: 0.95 };
+      }
+
+      // 3. Rate limit excedido = enfileira
+      if (!this.checkRateLimit()) {
+        return { action: 'queue', reason: 'rate_limit_exceeded', confidence: 0.95 };
+      }
+
+      // 4. Intenção simples (greeting, thanks, farewell) + alta confiança = auto-responde
+      const simpleIntents = ['greeting', 'thanks', 'farewell', 'confirmation'];
+      if (simpleIntents.includes(intent.primaryIntent) && intent.confidence >= 70) {
+        return { action: 'auto_respond', reason: 'simple_intent_high_confidence', confidence: 0.85 };
+      }
+
+      // 5. Confiança média = gera com IA
+      if (intent.confidence >= 50) {
+        return { action: 'ai_generate', reason: 'medium_confidence', confidence: 0.7 };
+      }
+
+      // 6. Baixa confiança = sugere respostas
+      return { action: 'suggest', reason: 'low_confidence', confidence: 0.5 };
+    }
+
+    /**
+     * Executa ação decidida
+     */
+    async executeAction(decision, message, analysis) {
+      switch (decision.action) {
+        case 'queue':
+          return await this.queueMessage(decision, message, analysis);
+        case 'escalate':
+          return await this.escalateToHuman(decision, message, analysis);
+        case 'auto_respond':
+          return await this.sendAutoResponse(decision, message, analysis);
+        case 'ai_generate':
+          return await this.generateAIResponse(decision, message, analysis);
+        case 'suggest':
+          return await this.suggestResponse(decision, message, analysis);
+        default:
+          return { success: false, error: 'unknown_action' };
+      }
+    }
+
+    /**
+     * Envia resposta automática
+     */
+    async sendAutoResponse(decision, message, analysis) {
+      const intents = this.setupIntentResponses();
+      const sentiment = analysis.sentiment || { sentiment: 'neutral' };
+      const intent = analysis.intent || { primaryIntent: 'other' };
+
+      const intentData = intents[intent.primaryIntent] || intents.other;
+      const response = this.selectAndAdjustResponse(intentData.responses, sentiment.sentiment);
+
+      return {
+        success: true,
+        action: 'auto_respond',
+        response,
+        confidence: intentData.confidence
+      };
+    }
+
+    /**
+     * Gera resposta com IA
+     */
+    async generateAIResponse(decision, message, analysis) {
+      try {
+        const context = {
+          message: message.text || message.body,
+          sentiment: analysis.sentiment,
+          intent: analysis.intent,
+          urgency: analysis.urgency
+        };
+
+        const aiResponse = await this.callExistingAI(context);
+        
+        return {
+          success: true,
+          action: 'ai_generate',
+          response: aiResponse,
+          confidence: 0.7
+        };
+      } catch (error) {
+        console.error('[SmartBotIA] Erro ao gerar resposta IA:', error);
+        return await this.suggestResponse(decision, message, analysis);
+      }
+    }
+
+    /**
+     * Chama IA existente
+     */
+    async callExistingAI(context) {
+      if (window.AIService && window.AIService.generateResponse) {
+        const response = await window.AIService.generateResponse(context.message, [], {
+          temperature: 0.7,
+          maxTokens: 300
+        });
+        return response;
+      }
+      return 'Entendi sua mensagem. Como posso ajudar?';
+    }
+
+    /**
+     * Sugere respostas
+     */
+    async suggestResponse(decision, message, analysis) {
+      const intents = this.setupIntentResponses();
+      const intent = analysis.intent || { primaryIntent: 'other' };
+      const intentData = intents[intent.primaryIntent] || intents.other;
+
+      return {
+        success: true,
+        action: 'suggest',
+        suggestions: intentData.responses,
+        confidence: intentData.confidence
+      };
+    }
+
+    /**
+     * Escala para humano
+     */
+    async escalateToHuman(decision, message, analysis) {
+      console.log('[SmartBotIA] Escalando para humano:', decision.reason);
+      
+      if (window.EventBus) {
+        window.EventBus.emit('smartbot:escalate', {
+          message,
+          analysis,
+          reason: decision.reason
+        });
+      }
+
+      return {
+        success: true,
+        action: 'escalate',
+        reason: decision.reason
+      };
+    }
+
+    /**
+     * Enfileira mensagem
+     */
+    async queueMessage(decision, message, analysis) {
+      console.log('[SmartBotIA] Enfileirando mensagem:', decision.reason);
+
+      if (this.priorityQueue) {
+        this.priorityQueue.enqueue(message, {
+          sentiment: analysis.sentiment?.score || 0,
+          urgency: analysis.urgency?.score || 0,
+          intent: analysis.intent?.primaryIntent || 'other'
+        });
+      }
+
+      return {
+        success: true,
+        action: 'queue',
+        reason: decision.reason
+      };
+    }
+
+    /**
+     * Seleciona e ajusta resposta por sentimento
+     */
+    selectAndAdjustResponse(responses, sentimentType) {
+      if (!Array.isArray(responses) || responses.length === 0) {
+        return 'Entendi. Como posso ajudar?';
+      }
+
+      // Seleciona resposta aleatória
+      const response = responses[Math.floor(Math.random() * responses.length)];
+      
+      // Ajusta por sentimento
+      return this.adjustResponseBySentiment(response, sentimentType);
+    }
+
+    /**
+     * Ajusta resposta baseado no sentimento
+     */
+    adjustResponseBySentiment(response, sentimentType) {
+      const adjustments = this.setupSentimentAdjustments();
+      const adjustment = adjustments[sentimentType] || adjustments.neutral;
+
+      let adjusted = response;
+
+      // Adiciona prefix
+      if (adjustment.prefix) {
+        adjusted = adjustment.prefix + adjusted;
+      }
+
+      // Adiciona suffix (emoji)
+      if (adjustment.suffix && Math.random() < adjustment.emojiFrequency) {
+        adjusted = adjusted + adjustment.suffix;
+      }
+
+      return adjusted;
+    }
+
+    /**
+     * Registra feedback
+     */
+    provideFeedback(messageId, feedbackType, correction = null) {
+      console.log('[SmartBotIA] Feedback recebido:', feedbackType, 'para', messageId);
+
+      if (this.learningSystem) {
+        this.learningSystem.recordFeedback({
+          messageId,
+          feedbackType,
+          correction,
+          timestamp: Date.now()
+        });
+      }
+
+      if (window.confidenceSystem) {
+        window.confidenceSystem.sendConfidenceFeedback(feedbackType, { messageId });
+      }
+    }
+
+    /**
+     * Atualiza histórico de conversação
+     */
+    updateConversationHistory(chatId, message, analysis) {
+      if (!this.conversationHistory) {
+        this.conversationHistory = new Map();
+      }
+
+      if (!this.conversationHistory.has(chatId)) {
+        this.conversationHistory.set(chatId, []);
+      }
+
+      const history = this.conversationHistory.get(chatId);
+      history.push({
+        message,
+        analysis,
+        timestamp: Date.now()
+      });
+
+      // Mantém apenas últimas 20 mensagens
+      if (history.length > 20) {
+        this.conversationHistory.set(chatId, history.slice(-20));
+      }
+    }
+
+    /**
+     * Obtém contexto da conversação (últimas 5 mensagens)
+     */
+    getConversationContext(chatId) {
+      if (!this.conversationHistory || !this.conversationHistory.has(chatId)) {
+        return [];
+      }
+
+      const history = this.conversationHistory.get(chatId);
+      return history.slice(-5);
+    }
+
+    /**
+     * Trata mudança de chat
+     */
+    handleChatChange(data) {
+      console.log('[SmartBotIA] Chat mudado:', data.chatId);
+      
+      if (window.EventBus) {
+        window.EventBus.emit('smartbot:chat-changed', data);
+      }
+    }
+
+    /**
+     * Trata indicador de digitação
+     */
+    handleTypingIndicator(data) {
+      console.log('[SmartBotIA] Alguém está digitando:', data.chatId);
+      
+      if (window.EventBus) {
+        window.EventBus.emit('smartbot:typing', data);
+      }
+    }
+
+    /**
+     * Verifica se está em horário comercial
+     * Seg-Sex 8-20, Sab 9-14
+     */
+    isBusinessHours() {
+      const now = new Date();
+      const day = now.getDay(); // 0=Domingo, 6=Sábado
+      const hour = now.getHours();
+
+      // Domingo (0)
+      if (day === 0) return false;
+
+      // Segunda a Sexta (1-5)
+      if (day >= 1 && day <= 5) {
+        return hour >= 8 && hour < 20;
+      }
+
+      // Sábado (6)
+      if (day === 6) {
+        return hour >= 9 && hour < 14;
+      }
+
+      return false;
+    }
+
+    /**
+     * Verifica rate limit (max 30 msgs/hora)
+     */
+    checkRateLimit() {
+      if (window.HumanTyping && window.HumanTyping.checkRateLimit) {
+        return window.HumanTyping.checkRateLimit();
+      }
+      return true; // Default: permitir
+    }
+
+    /**
+     * Registra mensagem enviada
+     */
+    recordMessageSent() {
+      if (window.HumanTyping && window.HumanTyping.recordMessageSent) {
+        window.HumanTyping.recordMessageSent();
+      }
+    }
+
+    /**
+     * Registra interação
+     */
+    recordInteraction(message, response, type, analysis) {
+      console.log('[SmartBotIA] Interação registrada:', type);
+
+      const interaction = {
+        message,
+        response,
+        type,
+        analysis,
+        timestamp: Date.now()
+      };
+
+      // Aprende com a interação
+      this.learnFromInteraction(interaction);
+
+      // Atualiza métricas
+      if (this.metricsSystem) {
+        this.metricsSystem.recordMessage(message, analysis);
+      }
+    }
+
+    /**
+     * Aprende com interação
+     */
+    learnFromInteraction(interaction) {
+      if (this.learningSystem) {
+        this.learningSystem.learn({
+          input: interaction.message.text || interaction.message.body,
+          output: interaction.response,
+          context: interaction.analysis,
+          type: interaction.type
+        });
+      }
+    }
+
+    /**
+     * Atualiza métricas
+     */
+    updateMetrics(analysis) {
+      if (this.metricsSystem) {
+        this.metricsSystem.recordMessage({}, analysis);
+      }
+    }
+
+    /**
+     * Adiciona intenção customizada
+     */
+    addCustomIntent(name, config) {
+      if (!this.customIntents) {
+        this.customIntents = {};
+      }
+
+      this.customIntents[name] = {
+        responses: config.responses || [],
+        confidence: config.confidence || 0.7,
+        patterns: config.patterns || [],
+        createdAt: Date.now()
+      };
+
+      console.log('[SmartBotIA] Intenção customizada adicionada:', name);
+    }
+
+    /**
+     * Adiciona padrão aprendido
+     */
+    addLearnedPattern(triggers, response, options = {}) {
+      if (this.learningSystem) {
+        this.learningSystem.addPattern({
+          triggers: Array.isArray(triggers) ? triggers : [triggers],
+          response,
+          category: options.category || 'learned',
+          confidence: options.confidence || 0.7,
+          createdAt: Date.now()
+        });
+      }
+
+      console.log('[SmartBotIA] Padrão aprendido adicionado');
+    }
+
+    /**
+     * Carrega conhecimento
+     */
+    async loadKnowledge() {
+      try {
+        if (window.knowledgeBase) {
+          const knowledge = window.knowledgeBase.getKnowledge();
+          console.log('[SmartBotIA] Conhecimento carregado:', knowledge);
+          return knowledge;
+        }
+        return null;
+      } catch (error) {
+        console.error('[SmartBotIA] Erro ao carregar conhecimento:', error);
+        return null;
+      }
+    }
+
+    /**
+     * Salva conhecimento
+     */
+    async saveKnowledge(knowledge) {
+      try {
+        if (window.knowledgeBase) {
+          await window.knowledgeBase.saveKnowledge(knowledge);
+          console.log('[SmartBotIA] Conhecimento salvo');
+          return true;
+        }
+        return false;
+      } catch (error) {
+        console.error('[SmartBotIA] Erro ao salvar conhecimento:', error);
+        return false;
+      }
+    }
+
+    /**
+     * Obtém estatísticas
+     */
+    getStats() {
+      return {
+        conversations: this.conversationHistory ? this.conversationHistory.size : 0,
+        customIntents: this.customIntents ? Object.keys(this.customIntents).length : 0,
+        learning: this.learningSystem ? this.learningSystem.getStats() : {},
+        metrics: this.metricsSystem ? this.metricsSystem.getMetrics() : {},
+        queue: this.priorityQueue ? this.priorityQueue.getStatus() : {}
+      };
     }
   }
 
