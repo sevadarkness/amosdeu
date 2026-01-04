@@ -210,25 +210,27 @@
                 console.log('[SmartReplies] AIService não disponível, usando config própria');
                 return;
             }
-            
+
             // BUG FIX 2: Wait for AIService to be fully initialized
             await new Promise(resolve => setTimeout(resolve, 100));
-            
+
             // Verificar se AIService tem provider configurado
-            if (window.AIService.isProviderConfigured && window.AIService.isProviderConfigured()) {
+            // BUG FIX: Use getConfiguredProviders() instead of isProviderConfigured() without parameter
+            if (window.AIService.getConfiguredProviders &&
+                window.AIService.getConfiguredProviders().length > 0) {
                 console.log('[SmartReplies] ✅ Sincronizado com AIService');
-                
+
                 // Obter configuração do provider padrão
                 const defaultProvider = window.AIService.getDefaultProvider?.();
                 if (defaultProvider) {
                     state.provider = defaultProvider;
-                    
+
                     // Get model from AIService
                     const providerConfig = window.AIService.getProviderConfig?.(defaultProvider);
                     if (providerConfig?.model) {
                         state.model = providerConfig.model;
                     }
-                    
+
                     console.log('[SmartReplies] Provider:', state.provider, 'Model:', state.model);
                 }
             }
@@ -299,15 +301,17 @@
         await saveState();
     }
     async function setApiKey(key) { state.apiKey = key; await saveApiKey(key); }
-    function isConfigured() { 
+    function isConfigured() {
         // PRIORIDADE 1: Verificar AIService (onde a config está salva via UI)
-        if (window.AIService && typeof window.AIService.isProviderConfigured === 'function') {
-            if (window.AIService.isProviderConfigured()) {
+        // BUG FIX: Use getConfiguredProviders() instead of isProviderConfigured() without parameter
+        if (window.AIService && typeof window.AIService.getConfiguredProviders === 'function') {
+            const configuredProviders = window.AIService.getConfiguredProviders();
+            if (configuredProviders && configuredProviders.length > 0) {
                 return true;
             }
         }
         // PRIORIDADE 2: Config própria (fallback para compatibilidade)
-        return !!(state.apiKey && state.provider && state.model); 
+        return !!(state.apiKey && state.provider && state.model);
     }
     async function setCustomSystemPrompt(prompt) { state.customSystemPrompt = prompt; await saveState(); }
 

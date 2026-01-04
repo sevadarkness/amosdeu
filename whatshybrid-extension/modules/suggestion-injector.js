@@ -606,7 +606,9 @@
       }
       
       // MÉTODO 2: AIService direto com contexto do DOM
-      if (window.AIService?.isProviderConfigured?.()) {
+      // BUG FIX: Check if ANY provider is configured (not call without parameter)
+      if (window.AIService?.getConfiguredProviders &&
+          window.AIService.getConfiguredProviders().length > 0) {
         console.log('[SuggestionInjector] Gerando via AIService...');
         
         // Formatar contexto
