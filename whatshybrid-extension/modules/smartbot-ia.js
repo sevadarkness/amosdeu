@@ -1791,8 +1791,8 @@
         if (lowerText.includes(word)) score += 20;
       });
       
-      if (sentiment.sentiment === 'negative') score += 15;
-      if (intent.primaryIntent === 'complaint') score += 30;
+      if (sentiment && sentiment.sentiment === 'negative') score += 15;
+      if (intent && intent.primaryIntent === 'complaint') score += 30;
       if ((text.match(/\?/g) || []).length > 1) score += 10;
       
       return {
@@ -1830,7 +1830,7 @@
       
       const intentConfig = this.knowledge.intents[intent.primaryIntent];
       if (intentConfig && intentConfig.autoSend && confidence >= this.config.confidenceThreshold && intentConfig.responses.length > 0) {
-        const response = this.selectAndAdjustResponse(intentConfig.responses, sentiment);
+        const response = this.selectAndAdjustResponse(intentConfig.responses, sentiment.sentiment);
         return {
           action: 'auto_respond',
           response,
@@ -1954,15 +1954,15 @@
      * Sugere respostas
      */
     async suggestResponse(decision, message, analysis) {
-      const intents = this.setupIntentResponses();
-      const intent = analysis.intent || { primaryIntent: 'other' };
-      const intentData = intents[intent.primaryIntent] || intents.other;
+      const intent = analysis?.intent || { primaryIntent: 'other' };
+      const intentKey = intent.primaryIntent || 'other';
+      const intentData = this.knowledge.intents[intentKey] || this.knowledge.intents.other;
 
       return {
         success: true,
         action: 'suggest',
-        suggestions: intentData.responses,
-        confidence: intentData.confidence
+        suggestions: intentData.responses || [],
+        confidence: intentData.confidence || 40
       };
     }
 
@@ -2034,19 +2034,19 @@
       
       let adjusted = response;
       
-      if (adjustments.prefix.length > 0 && Math.random() > 0.5) {
+      if (adjustments.prefix && Array.isArray(adjustments.prefix) && adjustments.prefix.length > 0 && Math.random() > 0.5) {
         const prefix = adjustments.prefix[Math.floor(Math.random() * adjustments.prefix.length)];
-        if (prefix && !adjusted.startsWith(prefix.trim())) {
+        if (prefix && typeof prefix === 'string' && prefix.trim() && !adjusted.startsWith(prefix.trim())) {
           adjusted = prefix + adjusted;
         }
       }
       
-      if (adjustments.suffix.length > 0) {
+      if (adjustments.suffix && Array.isArray(adjustments.suffix) && adjustments.suffix.length > 0) {
         const addSuffix = adjustments.emojiFrequency === 'high' ? 0.8 : 
                           adjustments.emojiFrequency === 'medium' ? 0.5 : 0.2;
         if (Math.random() < addSuffix) {
           const suffix = adjustments.suffix[Math.floor(Math.random() * adjustments.suffix.length)];
-          if (suffix && !adjusted.endsWith(suffix.trim())) {
+          if (suffix && typeof suffix === 'string' && suffix.trim() && !adjusted.endsWith(suffix.trim())) {
             adjusted = adjusted + suffix;
           }
         }
@@ -2214,9 +2214,14 @@
      * Atualiza métricas
      */
     updateMetrics(analysis) {
+      if (!analysis || !analysis.intent || !analysis.intent.primaryIntent) return;
+      
       const intent = analysis.intent.primaryIntent;
       this.metrics.intentDistribution[intent] = (this.metrics.intentDistribution[intent] || 0) + 1;
-      this.metrics.avgConfidence = (this.metrics.avgConfidence * (this.metrics.totalMessages - 1) + analysis.confidence) / this.metrics.totalMessages;
+      
+      if (this.metrics.totalMessages > 0 && analysis.confidence !== undefined) {
+        this.metrics.avgConfidence = (this.metrics.avgConfidence * (this.metrics.totalMessages - 1) + analysis.confidence) / this.metrics.totalMessages;
+      }
     }
 
     /**
