@@ -9,11 +9,31 @@
 (function() {
   'use strict';
 
+  // Constants
+  const BYTES_PER_KB = 1024;
+  const BYTES_PER_MB = 1024 * 1024;
+
   let mediaRecorder = null;
   let audioChunks = [];
   let isRecording = false;
   let recordingStart = null;
   let recordedAudioBlob = null;
+
+  // ============================================
+  // UTILITY FUNCTIONS
+  // ============================================
+  
+  /**
+   * Format file size for display
+   * @param {number} sizeInBytes - Size in bytes
+   * @returns {string} Formatted size string (e.g., "1.2 MB", "23.4 KB")
+   */
+  function formatFileSize(sizeInBytes) {
+    if (sizeInBytes >= BYTES_PER_MB) {
+      return `${(sizeInBytes / BYTES_PER_MB).toFixed(2)} MB`;
+    }
+    return `${(sizeInBytes / BYTES_PER_KB).toFixed(1)} KB`;
+  }
 
   // ============================================
   // GRAVAÇÃO DE ÁUDIO
@@ -85,17 +105,14 @@
           // ignore
         }
         
-        console.log('[AudioHandler] 📼 Gravado:', duration + 's, ' + (recordedAudioBlob.size / 1024).toFixed(1) + 'KB');
+        console.log('[AudioHandler] 📼 Gravado:', duration + 's, ' + formatFileSize(recordedAudioBlob.size));
         stream.getTracks().forEach(t => t.stop());
-        
-        // Calculate file size display
-        const sizeKB = (recordedAudioBlob.size / 1024).toFixed(1);
         
         // Mostrar opções no hint
         const hint = document.getElementById('sp_image_hint');
         if (hint) {
           hint.innerHTML = `
-            <span style="color:#4caf50">✅ Áudio gravado (${duration}s, ${sizeKB} KB) — anexado na campanha</span><br>
+            <span style="color:#4caf50">✅ Áudio gravado (${duration}s, ${formatFileSize(recordedAudioBlob.size)}) — anexado na campanha</span><br>
             <button id="whl_send_audio_btn" class="sp-btn sp-btn-primary" style="margin-top:6px;padding:6px 12px">
               📤 Enviar para chat ativo
             </button>
@@ -216,17 +233,13 @@
       
       if (!file) return;
       
-      console.log('[FileHandler] 📎 Arquivo selecionado:', file.name, file.type, (file.size/1024).toFixed(1) + 'KB');
+      console.log('[FileHandler] 📎 Arquivo selecionado:', file.name, file.type, formatFileSize(file.size));
       
       const hint = document.getElementById('sp_image_hint');
       if (hint) {
-        const sizeKB = (file.size / 1024).toFixed(1);
-        const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
-        const sizeDisplay = file.size > 1024 * 1024 ? `${sizeMB} MB` : `${sizeKB} KB`;
-        
         hint.innerHTML = `
           <span style="color:#2196f3">📎 ${file.name}</span>
-          <span style="color:rgba(255,255,255,0.6);font-size:11px;margin-left:8px">(${sizeDisplay})</span><br>
+          <span style="color:rgba(255,255,255,0.6);font-size:11px;margin-left:8px">(${formatFileSize(file.size)})</span><br>
           <button id="whl_send_file_btn" class="sp-btn sp-btn-primary" style="margin-top:6px;padding:6px 12px">
             📤 Enviar para chat ativo
           </button>`;
