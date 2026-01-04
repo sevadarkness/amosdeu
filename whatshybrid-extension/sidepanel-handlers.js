@@ -296,7 +296,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const btn = document.getElementById('qr-add-btn');
         
         if (!trigger || !response) {
-            showStatus('qr-add-btn', '❌ Preencha o gatilho e a resposta', 'error');
+            if (btn) {
+                btn.textContent = '❌ Preencha campos!';
+                setTimeout(() => {
+                    btn.textContent = '➕ Adicionar Resposta Rápida';
+                }, 2000);
+            }
             return;
         }
         
