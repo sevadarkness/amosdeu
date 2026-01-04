@@ -86,6 +86,7 @@
         "modules/smartbot-autopilot-v2.js",
         "modules/quick-replies.js",
         "modules/team-system.js",
+        "modules/ui-panel-shadow.js",
         "modules/init.js",
         "content/top-panel-injector.js",
         "content/extractor-v6-optimized.js",
