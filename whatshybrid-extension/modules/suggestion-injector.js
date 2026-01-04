@@ -375,6 +375,11 @@
         z-index: 1000;
         transition: transform 0.2s, box-shadow 0.2s;
       }
+      
+      /* Fallback for when button is on body instead of footer */
+      body > #whl-suggestion-fab {
+        position: fixed;
+      }
 
       #whl-suggestion-fab:hover {
         transform: scale(1.1);

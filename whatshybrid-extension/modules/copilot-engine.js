@@ -40,7 +40,7 @@
     
     // Fallback: execCommand
     element.focus();
-    await insertTextWithHumanTyping(inputField, text);
+    document.execCommand('insertText', false, text);
     element.dispatchEvent(new Event('input', { bubbles: true }));
     return true;
   }
