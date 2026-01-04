@@ -434,8 +434,72 @@
     }
   }
 
+  /**
+   * Função standalone para selecionar exemplos por keyword overlap
+   * @param {Array} examples - Array de exemplos { input, output, tags? }
+   * @param {string} transcript - Texto para análise
+   * @param {number} max - Máximo de exemplos (padrão: 3)
+   * @returns {Array} - Exemplos selecionados com score > 0
+   */
+  function pickExamples(examples, transcript, max = 3) {
+    if (!Array.isArray(examples) || examples.length === 0) {
+      return [];
+    }
+
+    if (!transcript || typeof transcript !== 'string') {
+      // Sem contexto, retorna os primeiros
+      return examples.slice(0, max);
+    }
+
+    // Extrai palavras relevantes do transcript (4+ chars)
+    const transcriptWords = transcript
+      .toLowerCase()
+      .replace(/[^\wáàâãéèêíïóôõöúçñ\s]/g, '')
+      .split(/\s+/)
+      .filter(w => w.length >= 4);
+
+    if (transcriptWords.length === 0) {
+      return examples.slice(0, max);
+    }
+
+    // Calcula score de cada exemplo baseado em keyword overlap
+    const scored = examples.map(example => {
+      let score = 0;
+      
+      // Combina input + output para análise
+      const exampleText = ((example.input || '') + ' ' + (example.output || '')).toLowerCase();
+      
+      // Extrai tags se não existir
+      let tags = example.tags || [];
+      if (tags.length === 0) {
+        tags = exampleText
+          .replace(/[^\wáàâãéèêíïóôõöúçñ\s]/g, '')
+          .split(/\s+/)
+          .filter(w => w.length >= 4);
+      }
+      
+      // Conta quantas palavras do transcript aparecem no exemplo
+      transcriptWords.forEach(word => {
+        if (tags.includes(word) || exampleText.includes(word)) {
+          score++;
+        }
+      });
+
+      return { ...example, score };
+    });
+
+    // Filtra exemplos com score > 0 e ordena por score
+    const relevant = scored
+      .filter(ex => ex.score > 0)
+      .sort((a, b) => b.score - a.score);
+
+    // Retorna top max exemplos
+    return relevant.slice(0, max);
+  }
+
   // Exporta globalmente
   window.FewShotLearning = FewShotLearning;
+  window.pickExamples = pickExamples;
 
   // Cria instância global
   if (!window.fewShotLearning) {

@@ -505,8 +505,199 @@ Retorne APENAS o JSON, sem explicações adicionais.`;
     }
   }
 
+  // Debounce timer para auto-update
+  let autoUpdateDebounceTimer = null;
+
+  /**
+   * Atualiza memória automaticamente com debounce
+   * @param {string} transcript - Transcrição da conversa
+   * @param {string} chatTitle - Título do chat
+   * @param {number} debounceMs - Tempo de debounce em ms (padrão: 5000)
+   * @returns {Promise<boolean>} - true se atualizado
+   */
+  async function autoUpdateMemory(transcript, chatTitle, debounceMs = 5000) {
+    // Valida entrada
+    if (!transcript || typeof transcript !== 'string' || transcript.length < 60) {
+      console.log('[MemorySystem] Transcript muito curto para auto-update (<60 chars)');
+      return false;
+    }
+
+    if (!chatTitle || typeof chatTitle !== 'string') {
+      console.warn('[MemorySystem] chatTitle inválido para auto-update');
+      return false;
+    }
+
+    // Cancela timer anterior
+    if (autoUpdateDebounceTimer) {
+      clearTimeout(autoUpdateDebounceTimer);
+    }
+
+    // Retorna promise que resolve após debounce
+    return new Promise((resolve) => {
+      autoUpdateDebounceTimer = setTimeout(async () => {
+        try {
+          console.log('[MemorySystem] Auto-update iniciado após debounce de', debounceMs, 'ms');
+          
+          // Gera summary estruturado
+          const summary = {
+            profile: extractProfile(transcript),
+            tone: detectTone(transcript),
+            preferences: extractPreferences(transcript),
+            context: extractContext(transcript),
+            open_loops: extractOpenLoops(transcript),
+            next_actions: suggestNextActions(transcript)
+          };
+
+          // Salva memória
+          if (window.memorySystem) {
+            const chatKey = window.memorySystem.getChatKey(chatTitle);
+            await window.memorySystem.setMemory(chatKey, summary);
+            console.log('[MemorySystem] Memória auto-atualizada para:', chatTitle);
+            resolve(true);
+          } else {
+            console.warn('[MemorySystem] memorySystem não disponível');
+            resolve(false);
+          }
+        } catch (error) {
+          console.error('[MemorySystem] Erro no auto-update:', error);
+          resolve(false);
+        }
+      }, debounceMs);
+    });
+  }
+
+  /**
+   * Extrai perfil do cliente do transcript
+   */
+  function extractProfile(transcript) {
+    const lowerText = transcript.toLowerCase();
+    let profile = [];
+    
+    // Detecta tipo de cliente
+    if (lowerText.includes('empresa') || lowerText.includes('cnpj')) {
+      profile.push('Cliente corporativo');
+    } else if (lowerText.includes('pessoal') || lowerText.includes('cpf')) {
+      profile.push('Cliente individual');
+    }
+    
+    // Detecta frequência
+    if (lowerText.includes('primeira vez') || lowerText.includes('novo')) {
+      profile.push('Primeiro contato');
+    } else if (lowerText.includes('sempre') || lowerText.includes('costum')) {
+      profile.push('Cliente recorrente');
+    }
+
+    return profile.length > 0 ? profile.join(', ') : 'Cliente padrão';
+  }
+
+  /**
+   * Detecta tom da conversa
+   */
+  function detectTone(transcript) {
+    const lowerText = transcript.toLowerCase();
+    
+    const formalWords = ['senhor', 'senhora', 'prezado', 'cordialmente', 'atenciosamente'];
+    const casualWords = ['oi', 'tudo bem', 'valeu', 'vlw', 'blz', 'tmj'];
+    
+    let formalCount = 0;
+    let casualCount = 0;
+    
+    formalWords.forEach(word => {
+      if (lowerText.includes(word)) formalCount++;
+    });
+    
+    casualWords.forEach(word => {
+      if (lowerText.includes(word)) casualCount++;
+    });
+    
+    if (formalCount > casualCount) return 'formal';
+    if (casualCount > formalCount) return 'casual';
+    return 'neutral';
+  }
+
+  /**
+   * Extrai preferências do cliente
+   */
+  function extractPreferences(transcript) {
+    const preferences = [];
+    const lowerText = transcript.toLowerCase();
+    
+    if (lowerText.includes('email') || lowerText.includes('e-mail')) {
+      preferences.push('Prefere contato por email');
+    }
+    if (lowerText.includes('whatsapp') || lowerText.includes('mensagem')) {
+      preferences.push('Prefere contato por WhatsApp');
+    }
+    if (lowerText.includes('ligar') || lowerText.includes('telefone')) {
+      preferences.push('Prefere contato por telefone');
+    }
+    if (lowerText.includes('rápid') || lowerText.includes('urgente')) {
+      preferences.push('Valoriza velocidade no atendimento');
+    }
+    
+    return preferences;
+  }
+
+  /**
+   * Extrai contexto relevante
+   */
+  function extractContext(transcript) {
+    const context = [];
+    const sentences = transcript.split(/[.!?]/).filter(s => s.trim().length > 20);
+    
+    // Pega até 3 sentenças mais relevantes
+    return sentences.slice(0, 3).map(s => s.trim());
+  }
+
+  /**
+   * Extrai pendências (open loops)
+   */
+  function extractOpenLoops(transcript) {
+    const loops = [];
+    const lowerText = transcript.toLowerCase();
+    
+    if (lowerText.includes('aguardan') || lowerText.includes('esperan')) {
+      loops.push('Aguardando resposta/ação');
+    }
+    if (lowerText.includes('enviar') || lowerText.includes('mandar')) {
+      loops.push('Envio de material/informação pendente');
+    }
+    if (lowerText.includes('confirma') || lowerText.includes('verifica')) {
+      loops.push('Confirmação pendente');
+    }
+    if (lowerText.includes('orçamento') || lowerText.includes('proposta')) {
+      loops.push('Orçamento/proposta em análise');
+    }
+    
+    return loops;
+  }
+
+  /**
+   * Sugere próximas ações
+   */
+  function suggestNextActions(transcript) {
+    const actions = [];
+    const lowerText = transcript.toLowerCase();
+    
+    if (lowerText.includes('dúvida') || lowerText.includes('?')) {
+      actions.push('Responder dúvidas pendentes');
+    }
+    if (lowerText.includes('preço') || lowerText.includes('quanto')) {
+      actions.push('Enviar informações de preço');
+    }
+    if (lowerText.includes('reunião') || lowerText.includes('conversar')) {
+      actions.push('Agendar reunião/call');
+    }
+    if (lowerText.includes('comprar') || lowerText.includes('adquirir')) {
+      actions.push('Enviar link de pagamento/contrato');
+    }
+    
+    return actions;
+  }
+
   // Exporta globalmente
   window.MemorySystem = MemorySystem;
+  window.autoUpdateMemory = autoUpdateMemory;
 
   // Cria instância global
   if (!window.memorySystem) {

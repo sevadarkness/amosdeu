@@ -588,10 +588,130 @@
         lastUpdated: this.knowledge.lastUpdated
       };
     }
+
+    /**
+     * Faz parse de CSV de produtos
+     * @param {string} csvText - Texto CSV
+     * @returns {Array} - Array de produtos { id, name, price, stock, description }
+     */
+    parseProductsCSV(csvText) {
+      if (!csvText || typeof csvText !== 'string') {
+        console.warn('[KnowledgeBase] CSV inválido');
+        return [];
+      }
+
+      try {
+        const lines = csvText.trim().split('\n');
+        if (lines.length < 2) {
+          console.warn('[KnowledgeBase] CSV vazio ou sem dados');
+          return [];
+        }
+
+        // Primeira linha é o cabeçalho
+        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+        
+        // Mapeia índices das colunas
+        const nameIdx = headers.findIndex(h => h.includes('name') || h.includes('nome') || h.includes('produto'));
+        const priceIdx = headers.findIndex(h => h.includes('price') || h.includes('preco') || h.includes('preço') || h.includes('valor'));
+        const stockIdx = headers.findIndex(h => h.includes('stock') || h.includes('estoque') || h.includes('quantidade'));
+        const descIdx = headers.findIndex(h => h.includes('desc') || h.includes('description') || h.includes('descricao') || h.includes('descrição'));
+
+        const products = [];
+
+        // Processa cada linha
+        for (let i = 1; i < lines.length; i++) {
+          const line = lines[i].trim();
+          if (!line) continue;
+
+          const values = line.split(',').map(v => v.trim());
+          
+          // Cria objeto produto
+          const product = {
+            id: Date.now() + i,
+            name: nameIdx >= 0 ? values[nameIdx] : `Produto ${i}`,
+            price: priceIdx >= 0 ? parseFloat(values[priceIdx].replace(/[^\d.,]/g, '').replace(',', '.')) || 0 : 0,
+            stock: stockIdx >= 0 ? parseInt(values[stockIdx]) || 0 : 0,
+            description: descIdx >= 0 ? values[descIdx] : '',
+            category: 'Importado',
+            createdAt: Date.now()
+          };
+
+          products.push(product);
+        }
+
+        console.log('[KnowledgeBase] CSV parseado:', products.length, 'produtos');
+        return products;
+      } catch (error) {
+        console.error('[KnowledgeBase] Erro ao fazer parse do CSV:', error);
+        return [];
+      }
+    }
+
+    /**
+     * Importa produtos de CSV e adiciona ao conhecimento
+     * @param {string} csvText - Texto CSV
+     * @returns {Promise<number>} - Número de produtos importados
+     */
+    async importProductsFromCSV(csvText) {
+      const products = this.parseProductsCSV(csvText);
+      
+      if (products.length > 0) {
+        this.knowledge.products.push(...products);
+        await this.save();
+        console.log('[KnowledgeBase] Produtos importados do CSV:', products.length);
+      }
+      
+      return products.length;
+    }
+  }
+
+  /**
+   * Função standalone para fazer parse de CSV de produtos
+   * @param {string} csvText - Texto CSV
+   * @returns {Array} - Array de produtos
+   */
+  function parseProductsCSV(csvText) {
+    if (!csvText || typeof csvText !== 'string') {
+      return [];
+    }
+
+    try {
+      const lines = csvText.trim().split('\n');
+      if (lines.length < 2) return [];
+
+      const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+      const nameIdx = headers.findIndex(h => h.includes('name') || h.includes('nome') || h.includes('produto'));
+      const priceIdx = headers.findIndex(h => h.includes('price') || h.includes('preco') || h.includes('preço') || h.includes('valor'));
+      const stockIdx = headers.findIndex(h => h.includes('stock') || h.includes('estoque') || h.includes('quantidade'));
+      const descIdx = headers.findIndex(h => h.includes('desc') || h.includes('description') || h.includes('descricao') || h.includes('descrição'));
+
+      const products = [];
+
+      for (let i = 1; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (!line) continue;
+
+        const values = line.split(',').map(v => v.trim());
+        
+        products.push({
+          id: Date.now() + i,
+          name: nameIdx >= 0 ? values[nameIdx] : `Produto ${i}`,
+          price: priceIdx >= 0 ? parseFloat(values[priceIdx].replace(/[^\d.,]/g, '').replace(',', '.')) || 0 : 0,
+          stock: stockIdx >= 0 ? parseInt(values[stockIdx]) || 0 : 0,
+          description: descIdx >= 0 ? values[descIdx] : ''
+        });
+      }
+
+      return products;
+    } catch (error) {
+      console.error('[parseProductsCSV] Erro:', error);
+      return [];
+    }
   }
 
   // Exporta globalmente
   window.KnowledgeBase = KnowledgeBase;
+  window.parseProductsCSV = parseProductsCSV;
 
   // Cria instância global
   if (!window.knowledgeBase) {

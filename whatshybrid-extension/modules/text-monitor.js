@@ -428,6 +428,149 @@
     clearHistory() {
       this.messageHistory.clear();
     }
+
+    /**
+     * Verifica status de digitação (typing indicator)
+     * Detecta quando alguém está digitando e dispara callback onTyping
+     */
+    checkTypingStatus() {
+      try {
+        // Observa mudanças no status de digitação
+        const typingIndicator = document.querySelector('[data-testid="typing-indicator"]');
+        
+        if (typingIndicator && typingIndicator.style.display !== 'none') {
+          // Alguém está digitando
+          if (this.options.onTyping && typeof this.options.onTyping === 'function') {
+            this.options.onTyping({ isTyping: true, timestamp: Date.now() });
+          }
+          
+          if (window.EventBus) {
+            window.EventBus.emit('text-monitor:typing', { isTyping: true });
+          }
+          
+          return true;
+        }
+        
+        return false;
+      } catch (error) {
+        console.warn('[TextMonitor] Erro ao verificar status de digitação:', error);
+        return false;
+      }
+    }
+
+    /**
+     * Observa mensagens e responde automaticamente baseado em patterns
+     * @param {Array} patterns - Array de padrões { trigger: string|RegExp, response: string }
+     * @returns {Function} - Função unsubscribe
+     */
+    watchForAutoResponses(patterns) {
+      if (!Array.isArray(patterns) || patterns.length === 0) {
+        console.warn('[TextMonitor] Patterns inválidos para watchForAutoResponses');
+        return () => {};
+      }
+
+      console.log('[TextMonitor] Iniciando observação de auto-respostas com', patterns.length, 'padrões');
+
+      // Armazena patterns
+      this.autoResponsePatterns = patterns.map(p => ({
+        trigger: typeof p.trigger === 'string' ? new RegExp(p.trigger, 'i') : p.trigger,
+        response: p.response,
+        category: p.category || 'auto'
+      }));
+
+      // Observer de mutações para detectar novas mensagens
+      const observer = new MutationObserver((mutations) => {
+        for (const mutation of mutations) {
+          if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+            mutation.addedNodes.forEach(node => {
+              if (node.nodeType === 1 && node.hasAttribute?.('data-testid')) {
+                const testId = node.getAttribute('data-testid');
+                if (testId === 'msg-container') {
+                  // Nova mensagem detectada
+                  const textElement = node.querySelector('.selectable-text span');
+                  if (textElement) {
+                    const text = textElement.textContent || '';
+                    this.checkAutoResponse(text);
+                  }
+                }
+              }
+            });
+          }
+        }
+      });
+
+      // Observa container de mensagens
+      const messagesContainer = document.querySelector('#main');
+      if (messagesContainer) {
+        observer.observe(messagesContainer, {
+          childList: true,
+          subtree: true
+        });
+      }
+
+      // Retorna função unsubscribe
+      return () => {
+        observer.disconnect();
+        this.autoResponsePatterns = [];
+        console.log('[TextMonitor] Auto-respostas desativadas');
+      };
+    }
+
+    /**
+     * Obtém estatísticas do chat atual
+     * @returns {Object} - { total, incoming, outgoing, ratioInOut, averageLength }
+     */
+    getChatStats() {
+      try {
+        const messageElements = document.querySelectorAll('[data-testid="msg-container"]');
+        
+        let total = 0;
+        let incoming = 0;
+        let outgoing = 0;
+        let totalLength = 0;
+
+        messageElements.forEach(msg => {
+          total++;
+          
+          // Detecta direção da mensagem
+          const isOutgoing = msg.classList.contains('message-out') || 
+                           msg.querySelector('[data-testid="msg-meta"] [data-icon="msg-dblcheck"]') ||
+                           msg.querySelector('[data-testid="msg-meta"] [data-icon="msg-check"]');
+          
+          if (isOutgoing) {
+            outgoing++;
+          } else {
+            incoming++;
+          }
+
+          // Calcula comprimento
+          const textElement = msg.querySelector('.selectable-text span');
+          if (textElement) {
+            totalLength += (textElement.textContent || '').length;
+          }
+        });
+
+        const averageLength = total > 0 ? Math.round(totalLength / total) : 0;
+        const ratioInOut = incoming > 0 ? (outgoing / incoming).toFixed(2) : 0;
+
+        return {
+          total,
+          incoming,
+          outgoing,
+          ratioInOut: parseFloat(ratioInOut),
+          averageLength
+        };
+      } catch (error) {
+        console.warn('[TextMonitor] Erro ao obter estatísticas do chat:', error);
+        return {
+          total: 0,
+          incoming: 0,
+          outgoing: 0,
+          ratioInOut: 0,
+          averageLength: 0
+        };
+      }
+    }
   }
 
   // Exporta globalmente
