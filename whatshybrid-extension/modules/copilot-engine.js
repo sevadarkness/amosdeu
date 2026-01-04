@@ -1125,23 +1125,7 @@ DIRETRIZES OBRIGATÓRIAS:
     }
   }
 
-  async function generateDraft(chatId, analysis) {
-    try {
-      const response = await generateResponse(chatId, analysis);
-
-      if (window.EventBus) {
-        window.EventBus.emit('copilot:draft', {
-          chatId,
-          content: response.content,
-          confidence: response.confidence
-        });
-      }
-
-      return response;
-    } catch (error) {
-      console.error('[CopilotEngine] Erro ao gerar draft:', error);
-    }
-  }
+  // v7.5.0: generateDraft() removed - AUTO_DRAFT mode no longer exists
 
   async function generateAndQueue(chatId, analysis) {
     try {
