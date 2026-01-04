@@ -113,6 +113,7 @@
   const CONFIG = {
     PANEL_ID: 'whl-suggestions-panel',
     MAX_SUGGESTIONS: 1, // Show only ONE best suggestion
+    MAX_CONTEXT_MESSAGES: 10, // Maximum number of messages to extract from DOM for context
     // v7.5.0: AUTO_HIDE_DELAY removed - no auto-hide behavior
     ANIMATION_DURATION: 300,
     // FAB positioning - positioned above WhatsApp input field to avoid overlapping send button
@@ -559,6 +560,7 @@
 
     // Foca no campo
     inputField.focus();
+    // Wait for focus to be established (100ms is sufficient for most browsers)
     await new Promise(r => setTimeout(r, 100));
 
     if (!focusOnly && text) {
@@ -566,7 +568,7 @@
       inputField.textContent = '';
       inputField.innerHTML = '';
       
-      // Aguardar limpeza
+      // Aguardar limpeza do DOM (100ms allows for browser reflow)
       await new Promise(r => setTimeout(r, 100));
       
       // Focar novamente após limpeza
@@ -581,8 +583,8 @@
         console.warn('[SuggestionInjector] execCommand falhou:', e);
       }
       
-      // MÉTODO 2: Fallback - inserção direta
-      if (!inserted || !inputField.textContent) {
+      // MÉTODO 2: Fallback - inserção direta (only if execCommand failed completely)
+      if (!inserted || !inputField.textContent || inputField.textContent.trim() === '') {
         console.log('[SuggestionInjector] Usando fallback de inserção direta');
         inputField.textContent = text;
       }
@@ -673,8 +675,8 @@
         return messages;
       }
       
-      // Pegar as últimas 10 mensagens
-      const lastMessages = Array.from(msgElements).slice(-10);
+      // Pegar as últimas N mensagens configuradas
+      const lastMessages = Array.from(msgElements).slice(-CONFIG.MAX_CONTEXT_MESSAGES);
       
       for (const el of lastMessages) {
         // Detectar se é mensagem recebida ou enviada
