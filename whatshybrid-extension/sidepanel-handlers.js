@@ -285,5 +285,382 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // ============================================
+    // QUICK REPLIES HANDLERS
+    // ============================================
+    
+    // Add quick reply
+    document.getElementById('qr-add-btn')?.addEventListener('click', async () => {
+        const trigger = document.getElementById('qr-trigger')?.value.trim();
+        const response = document.getElementById('qr-response')?.value.trim();
+        const btn = document.getElementById('qr-add-btn');
+        
+        if (!trigger || !response) {
+            if (btn) {
+                btn.textContent = '❌ Preencha campos!';
+                setTimeout(() => {
+                    btn.textContent = '➕ Adicionar Resposta Rápida';
+                }, 2000);
+            }
+            return;
+        }
+        
+        try {
+            if (btn) btn.textContent = '⏳ Salvando...';
+            await window.quickReplies?.addReply(trigger, response);
+            document.getElementById('qr-trigger').value = '';
+            document.getElementById('qr-response').value = '';
+            renderQuickRepliesList();
+            if (btn) {
+                btn.textContent = '✅ Adicionada!';
+                setTimeout(() => {
+                    btn.textContent = '➕ Adicionar Resposta Rápida';
+                }, 2000);
+            }
+        } catch (e) {
+            if (btn) {
+                btn.textContent = `❌ ${e.message}`;
+                setTimeout(() => {
+                    btn.textContent = '➕ Adicionar Resposta Rápida';
+                }, 3000);
+            }
+        }
+    });
+
+    // ============================================
+    // TEAM SYSTEM HANDLERS
+    // ============================================
+    
+    // Sender name input
+    document.getElementById('team-sender-name')?.addEventListener('change', async (e) => {
+        await window.teamSystem?.setSenderName(e.target.value);
+        console.log('[TeamSystem] Nome do remetente salvo:', e.target.value);
+    });
+    
+    // Add team member
+    document.getElementById('team-add-btn')?.addEventListener('click', async () => {
+        const name = document.getElementById('team-member-name')?.value.trim();
+        const phone = document.getElementById('team-member-phone')?.value.trim();
+        const btn = document.getElementById('team-add-btn');
+        
+        if (!phone) {
+            if (btn) {
+                btn.textContent = '❌ Número!';
+                setTimeout(() => {
+                    btn.textContent = '➕ Adicionar';
+                }, 2000);
+            }
+            return;
+        }
+        
+        try {
+            if (btn) btn.textContent = '⏳ Salvando...';
+            await window.teamSystem?.addMember(name, phone);
+            document.getElementById('team-member-name').value = '';
+            document.getElementById('team-member-phone').value = '';
+            renderTeamMembersList();
+            renderTeamStats();
+            if (btn) {
+                btn.textContent = '✅ Adicionado!';
+                setTimeout(() => {
+                    btn.textContent = '➕ Adicionar';
+                }, 2000);
+            }
+        } catch (e) {
+            if (btn) {
+                btn.textContent = '❌ Erro!';
+                setTimeout(() => {
+                    btn.textContent = '➕ Adicionar';
+                }, 3000);
+            }
+        }
+    });
+    
+    // Select all members
+    document.getElementById('team-select-all')?.addEventListener('click', () => {
+        window.teamSystem?.selectAll();
+        renderTeamMembersList();
+        renderTeamStats();
+    });
+    
+    // Clear selection
+    document.getElementById('team-clear-selection')?.addEventListener('click', () => {
+        window.teamSystem?.clearSelection();
+        renderTeamMembersList();
+        renderTeamStats();
+    });
+    
+    // Send to team
+    document.getElementById('team-send-btn')?.addEventListener('click', async () => {
+        const message = document.getElementById('team-message')?.value.trim();
+        const statusEl = document.getElementById('team-send-status');
+        const btn = document.getElementById('team-send-btn');
+        
+        if (!message) {
+            if (statusEl) {
+                statusEl.textContent = '❌ Digite uma mensagem';
+                statusEl.className = 'sp-status';
+            }
+            return;
+        }
+        
+        const selected = window.teamSystem?.getSelected() || [];
+        if (selected.length === 0) {
+            if (statusEl) {
+                statusEl.textContent = '❌ Selecione pelo menos um membro';
+                statusEl.className = 'sp-status';
+            }
+            return;
+        }
+        
+        // Simple confirmation via button feedback instead of blocking alert
+        if (btn && !btn.dataset.confirmed) {
+            btn.textContent = `⚠️ Confirmar envio para ${selected.length} membro(s)?`;
+            btn.dataset.confirmed = 'pending';
+            setTimeout(() => {
+                if (btn.dataset.confirmed === 'pending') {
+                    btn.textContent = '📤 Enviar para Selecionados';
+                    delete btn.dataset.confirmed;
+                }
+            }, 3000);
+            return;
+        }
+        
+        if (btn) {
+            delete btn.dataset.confirmed;
+            btn.textContent = '⏳ Enviando...';
+            btn.disabled = true;
+        }
+        
+        if (statusEl) {
+            statusEl.textContent = `⏳ Enviando para ${selected.length} membro(s)...`;
+            statusEl.className = 'sp-status';
+        }
+        
+        try {
+            const results = await window.teamSystem?.sendToTeam(message);
+            if (statusEl) {
+                statusEl.textContent = `✅ Enviado: ${results.success}/${results.total} | ❌ Falhas: ${results.failed}`;
+                statusEl.className = 'sp-status';
+            }
+            if (btn) {
+                btn.textContent = '✅ Concluído!';
+                setTimeout(() => {
+                    btn.textContent = '📤 Enviar para Selecionados';
+                    btn.disabled = false;
+                }, 2000);
+            }
+            document.getElementById('team-message').value = '';
+            renderTeamMembersList();
+            renderTeamStats();
+            
+            // Show details if there were failures
+            if (results.failed > 0) {
+                const failedDetails = results.details
+                    .filter(d => d.status === 'failed')
+                    .map(d => `${d.member}: ${d.error || 'Erro desconhecido'}`)
+                    .join('\n');
+                if (statusEl) {
+                    statusEl.textContent += `\n\nDetalhes das falhas:\n${failedDetails}`;
+                }
+            }
+        } catch (e) {
+            if (statusEl) {
+                statusEl.textContent = `❌ Erro: ${e.message}`;
+                statusEl.className = 'sp-status';
+            }
+            if (btn) {
+                btn.textContent = '📤 Enviar para Selecionados';
+                btn.disabled = false;
+            }
+        }
+    });
+
     console.log('[Sidepanel] ✅ Todos os handlers configurados');
+});
+
+// ============================================
+// RENDER FUNCTIONS FOR NEW FEATURES
+// ============================================
+
+function renderQuickRepliesList() {
+    const list = document.getElementById('qr-list');
+    const countEl = document.getElementById('qr-count');
+    const replies = window.quickReplies?.getAll() || [];
+    
+    if (countEl) {
+        countEl.textContent = `${replies.length} resposta${replies.length !== 1 ? 's' : ''}`;
+    }
+    
+    if (!list) return;
+    
+    if (replies.length === 0) {
+        list.innerHTML = '<div class="sp-muted" style="text-align: center; padding: 20px;">Nenhuma resposta rápida cadastrada</div>';
+        updateQuickRepliesStats();
+        return;
+    }
+    
+    list.innerHTML = replies.map(r => `
+        <div class="sp-card" style="margin-bottom: 8px; padding: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: start; gap: 10px;">
+                <div style="flex: 1;">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                        <span style="font-weight: 600; color: var(--mod-primary);">/${r.trigger}</span>
+                        <span class="sp-muted" style="font-size: 11px;">Usado ${r.usageCount || 0}x</span>
+                    </div>
+                    <div style="font-size: 12px; color: var(--mod-text-muted); white-space: pre-wrap; word-break: break-word;">
+                        ${escapeHtml(r.response.slice(0, 100))}${r.response.length > 100 ? '...' : ''}
+                    </div>
+                </div>
+                <button class="sp-btn sp-btn-danger" data-id="${r.id}" style="padding: 4px 8px; font-size: 11px;" onclick="deleteQuickReply('${r.id}')">
+                    🗑️
+                </button>
+            </div>
+        </div>
+    `).join('');
+    
+    updateQuickRepliesStats();
+}
+
+function updateQuickRepliesStats() {
+    const stats = window.quickReplies?.getStats();
+    if (!stats) return;
+    
+    const totalEl = document.getElementById('qr-stat-total');
+    const usageEl = document.getElementById('qr-stat-usage');
+    const mostUsedEl = document.getElementById('qr-stat-most-used');
+    
+    if (totalEl) totalEl.textContent = stats.total;
+    if (usageEl) usageEl.textContent = stats.totalUsage;
+    if (mostUsedEl) {
+        if (stats.mostUsed.length > 0) {
+            mostUsedEl.textContent = `/${stats.mostUsed[0].trigger}`;
+        } else {
+            mostUsedEl.textContent = '-';
+        }
+    }
+}
+
+async function deleteQuickReply(id) {
+    // Use inline confirmation instead of blocking alert
+    const btn = event?.target;
+    if (btn && !btn.dataset.confirmDelete) {
+        btn.textContent = '⚠️';
+        btn.dataset.confirmDelete = 'pending';
+        setTimeout(() => {
+            if (btn.dataset.confirmDelete === 'pending') {
+                btn.textContent = '🗑️';
+                delete btn.dataset.confirmDelete;
+            }
+        }, 3000);
+        return;
+    }
+    
+    if (btn) delete btn.dataset.confirmDelete;
+    
+    await window.quickReplies?.removeReply(id);
+    renderQuickRepliesList();
+}
+
+function renderTeamMembersList() {
+    const list = document.getElementById('team-members-list');
+    const members = window.teamSystem?.getAll() || [];
+    
+    if (!list) return;
+    
+    if (members.length === 0) {
+        list.innerHTML = '<div class="sp-muted" style="text-align: center; padding: 20px;">Nenhum membro cadastrado</div>';
+        return;
+    }
+    
+    list.innerHTML = members.map(m => `
+        <div class="sp-card ${m.selected ? 'selected' : ''}" style="margin-bottom: 6px; padding: 8px; ${m.selected ? 'background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3);' : ''}">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <label style="display: flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" ${m.selected ? 'checked' : ''} onchange="toggleTeamMember('${m.id}')" style="width: 18px; height: 18px; cursor: pointer;">
+                </label>
+                <div style="flex: 1;">
+                    <div style="font-weight: 600; font-size: 13px;">
+                        ${escapeHtml(m.name || 'Sem nome')}
+                    </div>
+                    <div style="font-size: 11px; color: var(--mod-text-muted);">
+                        ${window.teamSystem?.formatPhone(m.phone) || m.phone}
+                    </div>
+                    ${m.messagesSent > 0 ? `
+                        <div style="font-size: 10px; color: var(--mod-text-muted); margin-top: 2px;">
+                            📤 ${m.messagesSent} mensagem${m.messagesSent !== 1 ? 's' : ''} enviada${m.messagesSent !== 1 ? 's' : ''}
+                        </div>
+                    ` : ''}
+                </div>
+                <button class="sp-btn sp-btn-danger" style="padding: 4px 8px; font-size: 11px;" onclick="deleteTeamMember('${m.id}')">
+                    🗑️
+                </button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function renderTeamStats() {
+    const stats = window.teamSystem?.getStats();
+    if (!stats) return;
+    
+    const totalEl = document.getElementById('team-stat-total');
+    const selectedEl = document.getElementById('team-stat-selected');
+    const sentEl = document.getElementById('team-stat-sent');
+    
+    if (totalEl) totalEl.textContent = stats.totalMembers;
+    if (selectedEl) selectedEl.textContent = stats.selectedCount;
+    if (sentEl) sentEl.textContent = stats.totalMessagesSent;
+}
+
+function toggleTeamMember(id) {
+    window.teamSystem?.toggleSelection(id);
+    renderTeamMembersList();
+    renderTeamStats();
+}
+
+async function deleteTeamMember(id) {
+    // Use inline confirmation instead of blocking alert
+    const btn = event?.target;
+    if (btn && !btn.dataset.confirmDelete) {
+        btn.textContent = '⚠️';
+        btn.dataset.confirmDelete = 'pending';
+        setTimeout(() => {
+            if (btn.dataset.confirmDelete === 'pending') {
+                btn.textContent = '🗑️';
+                delete btn.dataset.confirmDelete;
+            }
+        }, 3000);
+        return;
+    }
+    
+    if (btn) delete btn.dataset.confirmDelete;
+    
+    await window.teamSystem?.removeMember(id);
+    renderTeamMembersList();
+    renderTeamStats();
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Initialize new features when views are loaded
+window.addEventListener('load', () => {
+    setTimeout(() => {
+        // Load sender name
+        if (window.teamSystem) {
+            const senderNameInput = document.getElementById('team-sender-name');
+            if (senderNameInput) {
+                senderNameInput.value = window.teamSystem.getSenderName();
+            }
+        }
+        
+        // Initial render
+        renderQuickRepliesList();
+        renderTeamMembersList();
+        renderTeamStats();
+    }, 1000);
 });

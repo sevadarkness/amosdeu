@@ -65,25 +65,173 @@
     if (!list) return;
     
     list.innerHTML = suggestions.map((sug, i) => `
-      <div class="wh-suggestion-item" data-index="${i}" style="
-        padding: 12px 16px;
-        cursor: pointer;
-        border-bottom: 1px solid rgba(255,255,255,0.08);
-        color: #e9edef;
-        font-size: 14px;
-        transition: background 0.2s;
-      " onmouseover="this.style.background='rgba(0,168,132,0.15)'" onmouseout="this.style.background='transparent'">
-        ${sug.text || sug}
+      <div class="wh-suggestion-wrapper" data-index="${i}" style="border-bottom: 1px solid rgba(255,255,255,0.08);">
+        <div class="wh-suggestion-item" style="
+          padding: 12px 16px 8px 16px;
+          cursor: pointer;
+          color: #e9edef;
+          font-size: 14px;
+          transition: background 0.2s;
+        " onmouseover="this.style.background='rgba(0,168,132,0.15)'" onmouseout="this.style.background='transparent'">
+          ${sug.text || sug}
+        </div>
+        <div class="wh-suggestion-feedback" style="
+          display: flex;
+          gap: 8px;
+          padding: 4px 16px 8px 16px;
+          justify-content: flex-end;
+        ">
+          <button class="wh-feedback-btn wh-feedback-good" data-index="${i}" style="
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            padding: 4px 8px;
+            opacity: 0.6;
+            transition: opacity 0.2s;
+          " title="Boa sugestão">👍</button>
+          <button class="wh-feedback-btn wh-feedback-bad" data-index="${i}" style="
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            padding: 4px 8px;
+            opacity: 0.6;
+            transition: opacity 0.2s;
+          " title="Sugestão ruim">👎</button>
+          <button class="wh-feedback-btn wh-feedback-edit" data-index="${i}" style="
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+            padding: 4px 8px;
+            opacity: 0.6;
+            transition: opacity 0.2s;
+          " title="Corrigir sugestão">✏️</button>
+        </div>
       </div>
     `).join('');
     
     container.style.display = 'block';
     
     // Click handler para inserir sugestão
-    list.querySelectorAll('.wh-suggestion-item').forEach(item => {
+    list.querySelectorAll('.wh-suggestion-item').forEach((item, index) => {
       item.addEventListener('click', async () => {
+        const wrapper = item.closest('.wh-suggestion-wrapper');
         const text = item.textContent.trim();
         await insertSuggestionWithTyping(text);
+        container.style.display = 'none';
+        
+        // Registra uso de sugestão
+        if (window.confidenceSystem) {
+          window.confidenceSystem.recordSuggestionUsage(false, { text, index });
+        }
+        if (window.trainingStats) {
+          window.trainingStats.incrementSuggestionsUsed();
+        }
+      });
+    });
+    
+    // Feedback buttons handlers
+    list.querySelectorAll('.wh-feedback-good').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const index = parseInt(btn.dataset.index);
+        const suggestion = suggestions[index];
+        
+        console.log('[SuggestionInjector] Feedback positivo:', suggestion);
+        
+        // Registra feedback positivo
+        if (window.confidenceSystem) {
+          await window.confidenceSystem.sendConfidenceFeedback('good', { suggestion, index });
+        }
+        if (window.trainingStats) {
+          await window.trainingStats.incrementGood();
+        }
+        
+        // Feedback visual
+        btn.style.opacity = '1';
+        btn.style.color = '#00a884';
+        setTimeout(() => {
+          btn.style.opacity = '0.6';
+          btn.style.color = '';
+        }, 2000);
+      });
+    });
+    
+    list.querySelectorAll('.wh-feedback-bad').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const index = parseInt(btn.dataset.index);
+        const suggestion = suggestions[index];
+        
+        console.log('[SuggestionInjector] Feedback negativo:', suggestion);
+        
+        // Registra feedback negativo
+        if (window.confidenceSystem) {
+          await window.confidenceSystem.sendConfidenceFeedback('bad', { suggestion, index });
+        }
+        if (window.trainingStats) {
+          await window.trainingStats.incrementBad();
+        }
+        
+        // Feedback visual
+        btn.style.opacity = '1';
+        btn.style.color = '#f44336';
+        setTimeout(() => {
+          btn.style.opacity = '0.6';
+          btn.style.color = '';
+        }, 2000);
+      });
+    });
+    
+    list.querySelectorAll('.wh-feedback-edit').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const index = parseInt(btn.dataset.index);
+        const suggestion = suggestions[index];
+        const sugText = typeof suggestion === 'string' ? suggestion : suggestion.text;
+        
+        // Insere sugestão no campo para edição
+        await insertSuggestionWithTyping(sugText);
+        
+        // Registra como editada
+        if (window.confidenceSystem) {
+          await window.confidenceSystem.recordSuggestionUsage(true, { suggestion, index });
+        }
+        
+        // Feedback visual
+        btn.style.opacity = '1';
+        btn.style.color = '#ffa726';
+        
+        // Prompt para corrigir
+        const corrected = prompt('Corrija a sugestão:', sugText);
+        if (corrected && corrected !== sugText) {
+          // Salva como exemplo de correção
+          if (window.fewShotLearning) {
+            await window.fewShotLearning.addExample({
+              input: 'Contexto da correção',
+              output: corrected,
+              context: `Original: ${sugText}`,
+              category: 'Correções'
+            });
+          }
+          
+          if (window.confidenceSystem) {
+            await window.confidenceSystem.sendConfidenceFeedback('correction', { 
+              original: sugText, 
+              corrected, 
+              index 
+            });
+          }
+          if (window.trainingStats) {
+            await window.trainingStats.incrementCorrected();
+          }
+          
+          // Atualiza campo com versão corrigida
+          await insertSuggestionWithTyping(corrected);
+        }
+        
         container.style.display = 'none';
       });
     });

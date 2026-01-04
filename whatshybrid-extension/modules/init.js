@@ -18,11 +18,15 @@
     { name: 'ChartEngine', global: 'ChartEngine', priority: 10 },
     { name: 'NotificationsModule', global: 'NotificationsModule', priority: 20 },
     { name: 'AnalyticsModule', global: 'AnalyticsModule', priority: 30 },
+    { name: 'ContactManager', global: 'ContactManager', priority: 35 },
     { name: 'CRMModule', global: 'CRMModule', priority: 40 },
     { name: 'TasksModule', global: 'TasksModule', priority: 50 },
+    { name: 'CampaignManager', global: 'CampaignManager', priority: 55 },
     { name: 'SmartRepliesModule', global: 'SmartRepliesModule', priority: 60 },
     { name: 'SubscriptionModule', global: 'SubscriptionModule', priority: 70 },
-    { name: 'LabelsModule', global: 'LabelsModule', priority: 80 }
+    { name: 'LabelsModule', global: 'LabelsModule', priority: 80 },
+    { name: 'BusinessIntelligence', global: 'BusinessIntelligence', priority: 85 },
+    { name: 'TrainingDebugTools', global: 'TrainingDebugTools', priority: 90 }
   ].sort((a, b) => (a.priority || 99) - (b.priority || 99));
 
   const initState = {

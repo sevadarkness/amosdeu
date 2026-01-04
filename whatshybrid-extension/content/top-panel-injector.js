@@ -122,6 +122,14 @@
                             <span class="tab-icon">🤖</span>
                             <span class="tab-label">Auto-Pilot</span>
                         </button>
+                        <button class="top-panel-tab" data-view="quickreplies" title="Respostas Rápidas">
+                            <span class="tab-icon">⚡</span>
+                            <span class="tab-label">Quick Replies</span>
+                        </button>
+                        <button class="top-panel-tab" data-view="team" title="Sistema de Equipe">
+                            <span class="tab-icon">👥</span>
+                            <span class="tab-label">Equipe</span>
+                        </button>
                         <button class="top-panel-tab" data-view="backend" title="Backend Sync">
                             <span class="tab-icon">🌐</span>
                             <span class="tab-label">Backend</span>

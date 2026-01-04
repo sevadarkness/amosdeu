@@ -1057,6 +1057,73 @@
       </div>
     </div>
 
+    <!-- Confidence System Card -->
+    <div class="sp-card">
+      <div class="sp-title">🎯 Sistema de Confiança</div>
+      <div class="sp-muted" style="margin-bottom: 12px;">A IA evolui conforme você usa e dá feedback.</div>
+      
+      <!-- Nível Atual -->
+      <div id="confidence_level_card" style="padding: 16px; border-radius: 12px; background: linear-gradient(135deg, rgba(139,92,246,0.2), rgba(59,130,246,0.2)); margin-bottom: 16px; text-align: center;">
+        <div style="font-size: 40px; margin-bottom: 8px;" id="confidence_emoji">🔴</div>
+        <div style="font-size: 18px; font-weight: 600; margin-bottom: 4px;" id="confidence_label">Iniciante</div>
+        <div style="font-size: 11px; color: var(--mod-text-muted); margin-bottom: 12px;" id="confidence_description">IA apenas sugere respostas básicas</div>
+        <div style="font-size: 32px; font-weight: 700;" id="confidence_score">0%</div>
+      </div>
+      
+      <!-- Barra de Progresso -->
+      <div style="margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <span style="font-size: 12px; color: var(--mod-text-muted);">Progresso</span>
+          <span style="font-size: 12px; font-weight: 600;" id="confidence_progress_text">0 / 70</span>
+        </div>
+        <div style="height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden;">
+          <div id="confidence_progress_bar" style="height: 100%; width: 0%; background: linear-gradient(90deg, #8b5cf6, #3b82f6); transition: width 0.3s;"></div>
+        </div>
+        <div style="font-size: 11px; color: var(--mod-text-muted); margin-top: 4px;" id="confidence_next_level">
+          Faltam 70 pontos para Copiloto
+        </div>
+      </div>
+      
+      <!-- Toggle Copilot Mode -->
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px; background: rgba(0,0,0,0.2); border-radius: 8px; margin-bottom: 12px;">
+        <div>
+          <div style="font-weight: 600; font-size: 14px;">🤖 Modo Copiloto</div>
+          <div style="font-size: 11px; color: var(--mod-text-muted);">Respostas automáticas quando confiante</div>
+        </div>
+        <label class="mod-switch">
+          <input type="checkbox" id="copilot_auto_enabled">
+          <span class="mod-switch-slider"></span>
+        </label>
+      </div>
+      
+      <!-- Threshold Slider -->
+      <div style="margin-bottom: 16px;">
+        <label class="mod-label">Threshold de Confiança: <span id="copilot_threshold_value">70</span>%</label>
+        <input type="range" id="copilot_threshold_slider" min="50" max="95" value="70" step="5" 
+               style="width: 100%; margin-top: 8px;">
+        <div style="display: flex; justify-content: space-between; font-size: 10px; color: var(--mod-text-muted); margin-top: 4px;">
+          <span>50% Conservador</span>
+          <span>95% Agressivo</span>
+        </div>
+      </div>
+      
+      <!-- Estatísticas de Feedback -->
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;">
+        <div class="mod-card" style="padding: 10px; text-align: center; background: rgba(16,185,129,0.1);">
+          <div style="font-size: 18px; font-weight: 600; color: #10b981;" id="confidence_feedback_good">0</div>
+          <div style="font-size: 10px; color: var(--mod-text-muted); margin-top: 2px;">👍 Bom</div>
+        </div>
+        <div class="mod-card" style="padding: 10px; text-align: center; background: rgba(239,68,68,0.1);">
+          <div style="font-size: 18px; font-weight: 600; color: #ef4444;" id="confidence_feedback_bad">0</div>
+          <div style="font-size: 10px; color: var(--mod-text-muted); margin-top: 2px;">👎 Ruim</div>
+        </div>
+        <div class="mod-card" style="padding: 10px; text-align: center; background: rgba(251,146,60,0.1);">
+          <div style="font-size: 18px; font-weight: 600; color: #fb923c;" id="confidence_corrections">0</div>
+          <div style="font-size: 10px; color: var(--mod-text-muted); margin-top: 2px;">✏️ Correções</div>
+        </div>
+      </div>
+    </div>
+
     <div class="sp-card">
       <div class="sp-title">📊 Métricas do Copilot</div>
       <div id="copilot_metrics" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;">
@@ -1234,22 +1301,126 @@
   <!-- Tab: Knowledge Base -->
   <div id="aiTabKnowledge" class="ai-tab-content" style="display: none;">
     <div class="sp-card">
-      <div class="sp-title">📚 Base de Conhecimento</div>
-      <div class="sp-muted">Adicione FAQs e informações que a IA usará nas respostas.</div>
+      <div class="sp-title">📚 Base de Conhecimento - Treinamento da IA</div>
+      <div class="sp-muted">Configure informações do negócio, produtos, FAQs e políticas para treinar a IA.</div>
     </div>
 
+    <!-- Negócio -->
     <div class="sp-card">
-      <div class="sp-title">➕ Adicionar FAQ</div>
+      <div class="sp-title">🏢 Informações do Negócio</div>
+      <input type="text" id="kb_business_name" class="mod-input" placeholder="Nome da empresa" style="margin-bottom: 8px;">
+      <textarea id="kb_business_description" class="mod-input" rows="2" placeholder="Descrição do negócio..." style="margin-bottom: 8px;"></textarea>
+      <input type="text" id="kb_business_segment" class="mod-input" placeholder="Segmento (ex: E-commerce, SaaS)" style="margin-bottom: 8px;">
+      <input type="text" id="kb_business_hours" class="mod-input" placeholder="Horário de atendimento" style="margin-bottom: 8px;">
+      <button id="kb_save_business" class="mod-btn mod-btn-primary" style="width: 100%;">💾 Salvar</button>
+    </div>
+
+    <!-- Políticas -->
+    <div class="sp-card">
+      <div class="sp-title">📋 Políticas</div>
+      <label class="mod-label">Pagamento</label>
+      <textarea id="kb_policy_payment" class="mod-input" rows="2" placeholder="Ex: Aceitamos PIX, cartão..." style="margin-bottom: 8px;"></textarea>
+      <label class="mod-label">Entrega</label>
+      <textarea id="kb_policy_delivery" class="mod-input" rows="2" placeholder="Ex: Entregamos em até 5 dias..." style="margin-bottom: 8px;"></textarea>
+      <label class="mod-label">Trocas/Devoluções</label>
+      <textarea id="kb_policy_returns" class="mod-input" rows="2" placeholder="Ex: Aceitamos trocas em até 7 dias..." style="margin-bottom: 8px;"></textarea>
+      <button id="kb_save_policies" class="mod-btn mod-btn-primary" style="width: 100%;">💾 Salvar</button>
+    </div>
+
+    <!-- Tom de Voz -->
+    <div class="sp-card">
+      <div class="sp-title">💬 Tom de Voz</div>
+      <label class="mod-label">Estilo de Comunicação</label>
+      <select id="kb_tone_style" class="mod-input mod-select" style="margin-bottom: 8px;">
+        <option value="professional">Profissional</option>
+        <option value="friendly">Amigável</option>
+        <option value="formal">Formal</option>
+        <option value="casual">Casual</option>
+      </select>
+      <label class="mod-label">
+        <input type="checkbox" id="kb_tone_emojis"> Usar emojis
+      </label>
+      <input type="text" id="kb_tone_greeting" class="mod-input" placeholder="Saudação padrão" style="margin-top: 8px; margin-bottom: 8px;">
+      <input type="text" id="kb_tone_closing" class="mod-input" placeholder="Despedida padrão" style="margin-bottom: 8px;">
+      <button id="kb_save_tone" class="mod-btn mod-btn-primary" style="width: 100%;">💾 Salvar</button>
+    </div>
+
+    <!-- Produtos -->
+    <div class="sp-card">
+      <div class="sp-title">📦 Produtos</div>
+      <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+        <input type="file" id="kb_products_csv" accept=".csv" style="display: none;">
+        <button id="kb_import_csv" class="mod-btn mod-btn-secondary" style="flex: 1;">📊 Importar CSV</button>
+        <button id="kb_add_product_manual" class="mod-btn mod-btn-secondary" style="flex: 1;">➕ Adicionar Manual</button>
+      </div>
+      <div id="kb_products_list" style="max-height: 200px; overflow-y: auto; margin-bottom: 8px;">
+        <div class="sp-muted">Nenhum produto cadastrado.</div>
+      </div>
+      <div class="sp-muted" style="font-size: 11px;">
+        Produtos cadastrados: <span id="kb_products_count">0</span>
+      </div>
+    </div>
+
+    <!-- FAQs -->
+    <div class="sp-card">
+      <div class="sp-title">❓ FAQs (Perguntas Frequentes)</div>
       <input type="text" id="kb_question" class="mod-input" placeholder="Pergunta..." style="margin-bottom: 8px;">
-      <textarea id="kb_answer" class="mod-input" rows="2" placeholder="Resposta..."></textarea>
-      <button id="kb_add_btn" class="mod-btn mod-btn-primary" style="width: 100%; margin-top: 8px;">➕ Adicionar</button>
-    </div>
-
-    <div class="sp-card">
-      <div class="sp-title">📋 FAQs Cadastradas</div>
-      <div id="kb_list" style="max-height: 300px; overflow-y: auto;">
+      <textarea id="kb_answer" class="mod-input" rows="2" placeholder="Resposta..." style="margin-bottom: 8px;"></textarea>
+      <button id="kb_add_btn" class="mod-btn mod-btn-primary" style="width: 100%;">➕ Adicionar FAQ</button>
+      <div id="kb_list" style="max-height: 250px; overflow-y: auto; margin-top: 12px;">
         <div class="sp-muted">Nenhuma FAQ cadastrada.</div>
       </div>
+    </div>
+
+    <!-- Respostas Rápidas -->
+    <div class="sp-card">
+      <div class="sp-title">⚡ Respostas Rápidas</div>
+      <input type="text" id="kb_canned_triggers" class="mod-input" placeholder="Palavras-chave (separadas por vírgula)" style="margin-bottom: 8px;">
+      <textarea id="kb_canned_reply" class="mod-input" rows="2" placeholder="Resposta automática..." style="margin-bottom: 8px;"></textarea>
+      <button id="kb_add_canned" class="mod-btn mod-btn-primary" style="width: 100%;">➕ Adicionar</button>
+      <div id="kb_canned_list" style="max-height: 200px; overflow-y: auto; margin-top: 12px;">
+        <div class="sp-muted">Nenhuma resposta rápida cadastrada.</div>
+      </div>
+    </div>
+
+    <!-- Estatísticas -->
+    <div class="sp-card">
+      <div class="sp-title">📊 Estatísticas de Treinamento</div>
+      <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;">
+        <div class="mod-card" style="padding: 12px; text-align: center; background: rgba(16,185,129,0.1);">
+          <div style="font-size: 24px; font-weight: 600; color: #10b981;" id="training_stat_good">0</div>
+          <div style="font-size: 11px; color: var(--mod-text-muted); margin-top: 4px;">👍 Bom</div>
+        </div>
+        <div class="mod-card" style="padding: 12px; text-align: center; background: rgba(239,68,68,0.1);">
+          <div style="font-size: 24px; font-weight: 600; color: #ef4444;" id="training_stat_bad">0</div>
+          <div style="font-size: 11px; color: var(--mod-text-muted); margin-top: 4px;">👎 Ruim</div>
+        </div>
+        <div class="mod-card" style="padding: 12px; text-align: center; background: rgba(251,146,60,0.1);">
+          <div style="font-size: 24px; font-weight: 600; color: #fb923c;" id="training_stat_corrected">0</div>
+          <div style="font-size: 11px; color: var(--mod-text-muted); margin-top: 4px;">✏️ Correções</div>
+        </div>
+        <div class="mod-card" style="padding: 12px; text-align: center; background: rgba(59,130,246,0.1);">
+          <div style="font-size: 24px; font-weight: 600; color: #3b82f6;" id="training_stat_success_rate">0%</div>
+          <div style="font-size: 11px; color: var(--mod-text-muted); margin-top: 4px;">Taxa de Sucesso</div>
+        </div>
+      </div>
+      <div style="margin-top: 12px; font-size: 11px; color: var(--mod-text-muted);">
+        FAQs: <span id="kb_faqs_count">0</span> | 
+        Produtos: <span id="kb_products_count_stat">0</span> | 
+        Exemplos: <span id="kb_examples_count">0</span>
+      </div>
+    </div>
+
+    <!-- Ações -->
+    <div class="sp-card">
+      <div class="sp-title">🔧 Ações</div>
+      <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;">
+        <button id="kb_export" class="mod-btn mod-btn-secondary">📤 Exportar JSON</button>
+        <button id="kb_import" class="mod-btn mod-btn-secondary">📥 Importar JSON</button>
+        <button id="kb_test_ia" class="mod-btn mod-btn-primary">🧪 Testar IA</button>
+        <button id="kb_clear" class="mod-btn mod-btn-danger">🗑️ Limpar Tudo</button>
+      </div>
+      <input type="file" id="kb_import_file" accept=".json" style="display: none;">
     </div>
   </div>
 </section>
@@ -1601,6 +1772,146 @@
   </div>
 </section>
 
+            <!-- ============ VIEW: QUICK REPLIES ============ -->
+            <section id="whlViewQuickReplies" class="whl-view hidden">
+  <div class="sp-card">
+    <div class="sp-title">⚡ Respostas Rápidas</div>
+    <div class="sp-muted">Crie atalhos para respostas frequentes. Digite /gatilho no chat para usar.</div>
+    
+    <!-- Form para adicionar -->
+    <div style="margin-top: 12px;">
+      <label class="sp-label">Gatilho</label>
+      <input type="text" id="qr-trigger" class="sp-input" placeholder="Ex: preco, horario, pix" style="margin-bottom: 8px;" />
+      
+      <label class="sp-label">Resposta</label>
+      <textarea id="qr-response" class="sp-textarea" rows="3" placeholder="Digite a resposta..."></textarea>
+      
+      <button id="qr-add-btn" class="sp-btn sp-btn-primary" style="width: 100%; margin-top: 10px;">➕ Adicionar Resposta Rápida</button>
+    </div>
+  </div>
+
+  <!-- Lista de respostas -->
+  <div class="sp-card">
+    <div class="sp-title" style="display: flex; justify-content: space-between; align-items: center;">
+      <span>📋 Suas Respostas Rápidas</span>
+      <span class="sp-muted" style="font-size: 11px;" id="qr-count">0 respostas</span>
+    </div>
+    <div id="qr-list" style="margin-top: 10px;">
+      <!-- Renderizado via JS -->
+      <div class="sp-muted" style="text-align: center; padding: 20px;">
+        Nenhuma resposta rápida cadastrada
+      </div>
+    </div>
+  </div>
+
+  <!-- Estatísticas -->
+  <div class="sp-card">
+    <div class="sp-title">📊 Estatísticas</div>
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px;">
+      <div style="text-align: center; padding: 10px; background: rgba(139, 92, 246, 0.1); border-radius: 8px;">
+        <div style="font-size: 20px; font-weight: 600;" id="qr-stat-total">0</div>
+        <div style="font-size: 11px; color: var(--mod-text-muted);">Total</div>
+      </div>
+      <div style="text-align: center; padding: 10px; background: rgba(16, 185, 129, 0.1); border-radius: 8px;">
+        <div style="font-size: 20px; font-weight: 600; color: #10b981;" id="qr-stat-usage">0</div>
+        <div style="font-size: 11px; color: var(--mod-text-muted);">Usos</div>
+      </div>
+      <div style="text-align: center; padding: 10px; background: rgba(245, 158, 11, 0.1); border-radius: 8px;">
+        <div style="font-size: 20px; font-weight: 600; color: #f59e0b;" id="qr-stat-most-used">-</div>
+        <div style="font-size: 11px; color: var(--mod-text-muted);">Mais Usada</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sp-card">
+    <div class="sp-title">💡 Como Usar</div>
+    <div class="sp-muted" style="font-size: 12px;">
+      <p style="margin: 8px 0;">1. Crie uma resposta rápida com um gatilho (ex: "preco")</p>
+      <p style="margin: 8px 0;">2. No WhatsApp, digite <strong>/preco</strong> no campo de mensagem</p>
+      <p style="margin: 8px 0;">3. Selecione a sugestão que aparece ou pressione <strong>Tab</strong>/<strong>Enter</strong></p>
+      <p style="margin: 8px 0;">4. A resposta será inserida automaticamente!</p>
+    </div>
+  </div>
+</section>
+
+            <!-- ============ VIEW: TEAM SYSTEM ============ -->
+            <section id="whlViewTeam" class="whl-view hidden">
+  <div class="sp-card">
+    <div class="sp-title">👥 Sistema de Equipe</div>
+    <div class="sp-muted">Envie mensagens em broadcast para múltiplos membros da equipe.</div>
+    
+    <!-- Nome do remetente -->
+    <div style="margin-top: 12px;">
+      <label class="sp-label">📝 Nome do Remetente</label>
+      <input type="text" id="team-sender-name" class="sp-input" placeholder="Ex: Rede Alabama" />
+      <div class="sp-muted" style="font-size: 11px; margin-top: 4px;">
+        Aparece no início da mensagem: <strong>*Nome:*</strong> mensagem
+      </div>
+    </div>
+  </div>
+
+  <!-- Adicionar membro -->
+  <div class="sp-card">
+    <div class="sp-title">➕ Adicionar Membro</div>
+    <div style="margin-top: 10px;">
+      <label class="sp-label">Nome (opcional)</label>
+      <input type="text" id="team-member-name" class="sp-input" placeholder="Nome do membro" style="margin-bottom: 8px;" />
+      
+      <label class="sp-label">Telefone</label>
+      <div style="display: flex; gap: 8px;">
+        <input type="text" id="team-member-phone" class="sp-input" placeholder="5511999999999" style="flex: 1;" />
+        <button id="team-add-btn" class="sp-btn sp-btn-primary" style="white-space: nowrap;">➕ Adicionar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lista de membros -->
+  <div class="sp-card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+      <div class="sp-title" style="margin: 0;">📋 Membros da Equipe</div>
+      <div style="display: flex; gap: 6px;">
+        <button id="team-select-all" class="sp-btn sp-btn-secondary" style="padding: 4px 10px; font-size: 11px;">✓ Todos</button>
+        <button id="team-clear-selection" class="sp-btn sp-btn-secondary" style="padding: 4px 10px; font-size: 11px;">✗ Limpar</button>
+      </div>
+    </div>
+    <div id="team-members-list" style="max-height: 300px; overflow-y: auto;">
+      <!-- Renderizado via JS -->
+      <div class="sp-muted" style="text-align: center; padding: 20px;">
+        Nenhum membro cadastrado
+      </div>
+    </div>
+  </div>
+
+  <!-- Área de mensagem -->
+  <div class="sp-card">
+    <div class="sp-title">💬 Mensagem para Equipe</div>
+    <textarea id="team-message" class="sp-textarea" rows="4" placeholder="Digite a mensagem que será enviada para os membros selecionados..."></textarea>
+    <button id="team-send-btn" class="sp-btn sp-btn-primary" style="width: 100%; margin-top: 10px; padding: 12px; font-size: 14px;">
+      📤 Enviar para Selecionados
+    </button>
+    <div id="team-send-status" class="sp-status" style="margin-top: 10px;"></div>
+  </div>
+
+  <!-- Estatísticas -->
+  <div class="sp-card">
+    <div class="sp-title">📊 Estatísticas</div>
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px;">
+      <div style="text-align: center; padding: 10px; background: rgba(139, 92, 246, 0.1); border-radius: 8px;">
+        <div style="font-size: 20px; font-weight: 600;" id="team-stat-total">0</div>
+        <div style="font-size: 11px; color: var(--mod-text-muted);">Membros</div>
+      </div>
+      <div style="text-align: center; padding: 10px; background: rgba(16, 185, 129, 0.1); border-radius: 8px;">
+        <div style="font-size: 20px; font-weight: 600; color: #10b981;" id="team-stat-selected">0</div>
+        <div style="font-size: 11px; color: var(--mod-text-muted);">Selecionados</div>
+      </div>
+      <div style="text-align: center; padding: 10px; background: rgba(59, 130, 246, 0.1); border-radius: 8px;">
+        <div style="font-size: 20px; font-weight: 600; color: #3b82f6;" id="team-stat-sent">0</div>
+        <div style="font-size: 11px; color: var(--mod-text-muted);">Msgs Enviadas</div>
+      </div>
+    </div>
+  </div>
+</section>
+
         </div>
 
 
@@ -1824,6 +2135,9 @@
 
     <!-- CORREÇÃO 2.4: Adicionar jsPDF para exportação PDF -->
     <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    
+    <!-- AI System Handlers -->
+    <script src="sidepanel-ai-handlers.js"></script>
 
 </body>
 </html>
