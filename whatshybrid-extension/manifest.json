@@ -71,6 +71,7 @@
         "modules/labels.js",
         "modules/crm.js",
         "modules/tasks.js",
+        "modules/campaign-manager.js",
         "modules/crm-badge-injector.js",
         "modules/task-markers-injector.js",
         "modules/quick-actions-injector.js",
