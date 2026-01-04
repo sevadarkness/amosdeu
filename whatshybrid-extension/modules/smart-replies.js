@@ -186,11 +186,50 @@
     async function init() {
         if (initialized) return;
         console.log('[SmartReplies] Inicializando...');
+        
         await loadState();
+        
+        // Sincronizar com AIService se disponível
+        await syncWithAIService();
+        
         injectStyles();
         initialized = true;
-        if (window.EventBus) window.EventBus.emit(window.EventBus.EVENTS.MODULE_LOADED, { module: 'SmartReplies' });
+        
+        if (window.EventBus) {
+            window.EventBus.emit(window.EventBus.EVENTS.MODULE_LOADED, { module: 'SmartReplies' });
+        }
+        
         console.log('[SmartReplies] Modo:', state.mode);
+        console.log('[SmartReplies] Configurado:', isConfigured());
+    }
+
+    // Nova função para sincronizar com AIService
+    async function syncWithAIService() {
+        try {
+            if (!window.AIService) {
+                console.log('[SmartReplies] AIService não disponível, usando config própria');
+                return;
+            }
+            
+            // Verificar se AIService tem provider configurado
+            if (window.AIService.isProviderConfigured && window.AIService.isProviderConfigured()) {
+                console.log('[SmartReplies] ✅ Sincronizado com AIService');
+                
+                // Obter configuração do provider padrão
+                const defaultProvider = window.AIService.getDefaultProvider?.() || 'openai';
+                const providerConfig = window.AIService.getProviderConfig?.(defaultProvider);
+                
+                if (providerConfig) {
+                    // Atualizar estado local para compatibilidade
+                    state.provider = defaultProvider;
+                    state.model = providerConfig.model || 'gpt-4o-mini';
+                    // Não copiar apiKey para o state local (segurança)
+                    console.log('[SmartReplies] Provider:', state.provider, 'Model:', state.model);
+                }
+            }
+        } catch (e) {
+            console.warn('[SmartReplies] Erro ao sincronizar com AIService:', e);
+        }
     }
 
     function injectStyles() {
@@ -255,7 +294,16 @@
         await saveState();
     }
     async function setApiKey(key) { state.apiKey = key; await saveApiKey(key); }
-    function isConfigured() { return !!(state.apiKey && state.provider && state.model); }
+    function isConfigured() { 
+        // PRIORIDADE 1: Verificar AIService (onde a config está salva via UI)
+        if (window.AIService && typeof window.AIService.isProviderConfigured === 'function') {
+            if (window.AIService.isProviderConfigured()) {
+                return true;
+            }
+        }
+        // PRIORIDADE 2: Config própria (fallback para compatibilidade)
+        return !!(state.apiKey && state.provider && state.model); 
+    }
     async function setCustomSystemPrompt(prompt) { state.customSystemPrompt = prompt; await saveState(); }
 
     // ============ PERSONAS ============
@@ -303,24 +351,70 @@
 
     // ============ AI CALLS ============
     async function callAI(messages, options = {}) {
-        if (!isConfigured()) throw new Error('Configure o provider e API key');
-        const provider = getProvider();
-        const persona = getActivePersona();
-        const systemPrompt = options.systemPrompt || persona.systemPrompt;
-        const temperature = options.temperature ?? persona.temperature;
-        const maxTokens = options.maxTokens ?? persona.maxTokens;
-
         state.isLoading = true;
         state.lastError = null;
 
         try {
+            // PRIORIDADE 1: Usar AIService (funciona e bypassa CSP)
+            if (window.AIService && typeof window.AIService.isProviderConfigured === 'function') {
+                if (window.AIService.isProviderConfigured()) {
+                    console.log('[SmartReplies] Usando AIService para chamada de IA');
+                    
+                    const persona = getActivePersona();
+                    const systemPrompt = options.systemPrompt || persona.systemPrompt;
+                    
+                    // Formatar mensagens com system prompt
+                    const formattedMessages = [
+                        { role: 'system', content: systemPrompt },
+                        ...messages.map(m => ({
+                            role: m.role || 'user',
+                            content: m.content || m.text || String(m)
+                        }))
+                    ];
+                    
+                    const result = await window.AIService.complete(formattedMessages, {
+                        temperature: options.temperature ?? persona.temperature ?? 0.7,
+                        maxTokens: options.maxTokens ?? persona.maxTokens ?? 300
+                    });
+                    
+                    // Consumir crédito se SubscriptionModule disponível
+                    if (window.SubscriptionModule) {
+                        try { await window.SubscriptionModule.consumeCredit(1); } catch (e) {}
+                    }
+                    
+                    return { 
+                        content: result.content || result.text || '',
+                        usage: result.usage 
+                    };
+                }
+            }
+            
+            // PRIORIDADE 2: Config própria (fallback)
+            if (!state.apiKey || !state.provider || !state.model) {
+                throw new Error('Configure o provider e API key');
+            }
+            
+            const provider = getProvider();
+            const persona = getActivePersona();
+            const systemPrompt = options.systemPrompt || persona.systemPrompt;
+            const temperature = options.temperature ?? persona.temperature;
+            const maxTokens = options.maxTokens ?? persona.maxTokens;
+
             let result;
-            if (provider.id === 'anthropic') result = await callAnthropic(messages, systemPrompt, temperature, maxTokens);
-            else result = await callOpenAI(provider, messages, systemPrompt, temperature, maxTokens);
-            if (window.SubscriptionModule) try { await window.SubscriptionModule.consumeCredit(1); } catch (e) {}
+            if (provider.id === 'anthropic') {
+                result = await callAnthropic(messages, systemPrompt, temperature, maxTokens);
+            } else {
+                result = await callOpenAI(provider, messages, systemPrompt, temperature, maxTokens);
+            }
+            
+            if (window.SubscriptionModule) {
+                try { await window.SubscriptionModule.consumeCredit(1); } catch (e) {}
+            }
+            
             return result;
         } catch (e) {
             state.lastError = e.message;
+            console.error('[SmartReplies] Erro em callAI:', e);
             throw e;
         } finally {
             state.isLoading = false;

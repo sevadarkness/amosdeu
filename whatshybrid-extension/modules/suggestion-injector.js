@@ -624,26 +624,138 @@
 
   // Request suggestion generation from AI
   async function requestSuggestionGeneration() {
+    const chatId = state.currentChatId || getCurrentChatId();
+    
     try {
-      // Try to get current chat context
-      const chatId = state.currentChatId || getCurrentChatId();
-      
-      // Request suggestions via SmartRepliesModule if available
-      if (window.SmartRepliesModule && typeof window.SmartRepliesModule.generateSuggestions === 'function') {
-        const contextMessages = window.SmartRepliesModule.getHistory?.(chatId) || [];
-        const suggestions = await window.SmartRepliesModule.generateSuggestions(chatId, contextMessages);
-        if (suggestions && suggestions.length > 0) {
-          showSuggestions(suggestions, chatId);
-        } else {
-          showEmptySuggestion();
+        // MÉTODO 1: SmartRepliesModule (usa AIService internamente agora)
+        if (window.SmartRepliesModule) {
+            // Verificar se está configurado
+            if (window.SmartRepliesModule.isConfigured && window.SmartRepliesModule.isConfigured()) {
+                console.log('[SuggestionInjector] Gerando via SmartRepliesModule...');
+                const contextMessages = window.SmartRepliesModule.getHistory?.(chatId) || [];
+                const suggestions = await window.SmartRepliesModule.generateSuggestions(chatId, contextMessages);
+                
+                if (suggestions && suggestions.length > 0) {
+                    showSuggestions(suggestions, chatId);
+                    return;
+                }
+            }
         }
-      } else {
-        // Fallback: show message that AI needs to be configured
-        showEmptySuggestion();
-      }
+        
+        // MÉTODO 2: Fallback direto para AIService
+        if (window.AIService && window.AIService.isProviderConfigured?.()) {
+            console.log('[SuggestionInjector] Fallback: gerando via AIService direto...');
+            
+            // Obter contexto do chat atual
+            const context = await getConversationContext(chatId);
+            
+            const prompt = `Baseado no contexto da conversa, gere 1 sugestão de resposta profissional e útil.
+            
+Contexto:
+${context}
+
+Responda APENAS com o texto da sugestão, sem formatação adicional.`;
+            
+            const result = await window.AIService.generateText(prompt, {
+                temperature: 0.7,
+                maxTokens: 200
+            });
+            
+            if (result && result.content) {
+                showSuggestions([{ text: result.content, type: 'ai' }], chatId);
+                return;
+            }
+        }
+        
+        // MÉTODO 3: SmartBot como último fallback
+        if (window.smartBot && window.smartBot.generateResponse) {
+            console.log('[SuggestionInjector] Fallback: gerando via SmartBot...');
+            const response = await window.smartBot.generateResponse(chatId, '', []);
+            
+            if (response && response.text) {
+                showSuggestions([{ text: response.text, type: 'smartbot' }], chatId);
+                return;
+            }
+        }
+        
+        // Nenhum método disponível
+        showConfigurationNeeded();
+        
     } catch (error) {
-      console.error('[SuggestionInjector] Error generating suggestion:', error);
-      showEmptySuggestion();
+        console.error('[SuggestionInjector] Error generating suggestion:', error);
+        showErrorSuggestion(error.message);
+    }
+  }
+
+  // Nova função auxiliar para obter contexto
+  async function getConversationContext(chatId) {
+    try {
+        // Tentar obter do CopilotEngine
+        if (window.CopilotEngine && window.CopilotEngine.getContext) {
+            const ctx = window.CopilotEngine.getContext(chatId);
+            if (ctx && ctx.messages && ctx.messages.length > 0) {
+                return ctx.messages.slice(-5).map(m => `${m.role}: ${m.content}`).join('\n');
+            }
+        }
+        
+        // Tentar obter do SmartRepliesModule
+        if (window.SmartRepliesModule && window.SmartRepliesModule.getHistory) {
+            const history = window.SmartRepliesModule.getHistory(chatId);
+            if (history && history.length > 0) {
+                return history.slice(-5).map(m => `${m.role}: ${m.content}`).join('\n');
+            }
+        }
+        
+        return 'Sem contexto disponível. Gere uma saudação profissional.';
+    } catch (e) {
+        return 'Sem contexto disponível. Gere uma saudação profissional.';
+    }
+  }
+
+  // Nova função para mostrar que precisa configurar
+  function showConfigurationNeeded() {
+    const panel = document.getElementById('whl-suggestion-panel');
+    if (!panel) return;
+    
+    const content = panel.querySelector('.whl-suggestion-content');
+    if (content) {
+        content.innerHTML = `
+            <div style="padding: 16px; text-align: center;">
+                <div style="font-size: 24px; margin-bottom: 8px;">⚙️</div>
+                <div style="color: #fbbf24; font-weight: 500; margin-bottom: 8px;">Configure a IA</div>
+                <div style="color: rgba(255,255,255,0.6); font-size: 12px; margin-bottom: 12px;">
+                    Abra o painel lateral e configure o provider de IA nas Configurações.
+                </div>
+                <button onclick="window.openSidePanel?.('ai')" style="
+                    background: linear-gradient(135deg, #8b5cf6, #6366f1);
+                    border: none;
+                    color: white;
+                    padding: 8px 16px;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font-size: 12px;
+                ">
+                    🔧 Abrir Configurações
+                </button>
+            </div>
+        `;
+    }
+  }
+
+  // Nova função para mostrar erro
+  function showErrorSuggestion(errorMessage) {
+    const panel = document.getElementById('whl-suggestion-panel');
+    if (!panel) return;
+    
+    const content = panel.querySelector('.whl-suggestion-content');
+    if (content) {
+        content.innerHTML = `
+            <div style="padding: 16px; text-align: center;">
+                <div style="font-size: 24px; margin-bottom: 8px;">❌</div>
+                <div style="color: #ef4444; font-weight: 500; margin-bottom: 4px;">Erro ao gerar</div>
+                <div style="color: rgba(255,255,255,0.5); font-size: 11px;">${errorMessage || 'Tente novamente'}</div>
+            </div>
+        `;
     }
   }
 

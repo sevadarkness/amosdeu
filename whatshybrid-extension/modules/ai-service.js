@@ -398,6 +398,10 @@
     return Object.keys(state.configs).filter(id => isProviderConfigured(id));
   }
 
+  function getDefaultProvider() {
+    return state.defaultProvider;
+  }
+
   // ============================================
   // CACHE
   // ============================================
@@ -875,6 +879,7 @@ Diretrizes:
     configureProvider,
     getProviderConfig,
     setDefaultProvider,
+    getDefaultProvider,
     setFallbackChain,
     isProviderConfigured,
     getConfiguredProviders,
