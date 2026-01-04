@@ -538,46 +538,83 @@
       '[data-testid="conversation-compose-box-input"]',
       'div[contenteditable="true"][data-tab="10"]',
       'footer div[contenteditable="true"]',
-      '#main footer div[contenteditable="true"]'
+      '#main footer div[contenteditable="true"]',
+      'div[contenteditable="true"][role="textbox"]'
     ];
 
     let inputField = null;
     for (const sel of selectors) {
       inputField = document.querySelector(sel);
-      if (inputField) break;
+      if (inputField) {
+        console.log('[SuggestionInjector] Campo encontrado:', sel);
+        break;
+      }
     }
 
     if (!inputField) {
       console.error('[SuggestionInjector] Campo de texto não encontrado');
       showToast('❌ Campo de texto não encontrado', 'error');
-      return;
+      return false;
     }
 
     // Foca no campo
     inputField.focus();
+    await new Promise(r => setTimeout(r, 100));
 
-    if (!focusOnly) {
-      // CORREÇÃO CRÍTICA: Limpar campo COMPLETAMENTE antes de inserir
+    if (!focusOnly && text) {
+      // CORREÇÃO: Limpar campo COMPLETAMENTE
       inputField.textContent = '';
       inputField.innerHTML = '';
       
-      // Aguardar um momento para garantir que o campo foi limpo
-      await new Promise(resolve => setTimeout(resolve, 50));
+      // Aguardar limpeza
+      await new Promise(r => setTimeout(r, 100));
       
-      // Método ÚNICO de inserção: usar apenas execCommand para evitar duplicação
-      document.execCommand('insertText', false, text);
+      // Focar novamente após limpeza
+      inputField.focus();
       
-      // Dispara evento de input UMA ÚNICA VEZ para WhatsApp detectar
-      inputField.dispatchEvent(new InputEvent('input', { bubbles: true }));
-
+      // MÉTODO 1: execCommand (preferido)
+      let inserted = false;
+      try {
+        inserted = document.execCommand('insertText', false, text);
+        console.log('[SuggestionInjector] execCommand result:', inserted);
+      } catch (e) {
+        console.warn('[SuggestionInjector] execCommand falhou:', e);
+      }
+      
+      // MÉTODO 2: Fallback - inserção direta
+      if (!inserted || !inputField.textContent) {
+        console.log('[SuggestionInjector] Usando fallback de inserção direta');
+        inputField.textContent = text;
+      }
+      
+      // Dispara eventos para WhatsApp detectar
+      inputField.dispatchEvent(new InputEvent('input', { 
+        bubbles: true, 
+        cancelable: true,
+        inputType: 'insertText',
+        data: text 
+      }));
+      
+      // Evento adicional para garantir
+      inputField.dispatchEvent(new Event('change', { bubbles: true }));
+      
       // Move cursor para o final
-      const range = document.createRange();
-      const sel = window.getSelection();
-      range.selectNodeContents(inputField);
-      range.collapse(false);
-      sel.removeAllRanges();
-      sel.addRange(range);
+      try {
+        const range = document.createRange();
+        const sel = window.getSelection();
+        range.selectNodeContents(inputField);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      } catch (e) {
+        console.warn('[SuggestionInjector] Erro ao mover cursor:', e);
+      }
+      
+      console.log('[SuggestionInjector] Texto inserido:', text.substring(0, 30) + '...');
+      return true;
     }
+    
+    return true;
   }
 
   // ============================================================
@@ -614,141 +651,204 @@
     }
   }
 
+  // Extract messages from WhatsApp Web DOM
+  function extractMessagesFromDOM() {
+    const messages = [];
+    try {
+      // Seletores para mensagens do WhatsApp Web
+      const messageSelectors = [
+        '[data-testid="msg-container"]',
+        '.message-in, .message-out',
+        '[data-id][class*="message"]'
+      ];
+      
+      let msgElements = null;
+      for (const sel of messageSelectors) {
+        msgElements = document.querySelectorAll(sel);
+        if (msgElements && msgElements.length > 0) break;
+      }
+      
+      if (!msgElements || msgElements.length === 0) {
+        console.warn('[SuggestionInjector] Nenhuma mensagem encontrada no DOM');
+        return messages;
+      }
+      
+      // Pegar as últimas 10 mensagens
+      const lastMessages = Array.from(msgElements).slice(-10);
+      
+      for (const el of lastMessages) {
+        // Detectar se é mensagem recebida ou enviada
+        const isOutgoing = el.classList.contains('message-out') || 
+                           el.closest('[data-testid="msg-container"]')?.querySelector('[data-icon="tail-out"]') ||
+                           el.getAttribute('data-id')?.includes('true');
+        
+        // Extrair texto
+        const textEl = el.querySelector('[data-testid="msg-text"], .copyable-text span, .selectable-text span');
+        const text = textEl?.textContent?.trim() || '';
+        
+        if (text) {
+          messages.push({
+            role: isOutgoing ? 'assistant' : 'user',
+            content: text
+          });
+        }
+      }
+      
+      console.log('[SuggestionInjector] Extraídas', messages.length, 'mensagens do DOM');
+    } catch (e) {
+      console.error('[SuggestionInjector] Erro ao extrair mensagens:', e);
+    }
+    
+    return messages;
+  }
+
   // Request suggestion generation from AI
   async function requestSuggestionGeneration() {
     const chatId = state.currentChatId || getCurrentChatId();
     
+    // Mostrar loading
+    const body = document.getElementById('whl-sug-body');
+    if (body) {
+      body.innerHTML = `
+        <div class="whl-sug-loading">
+          <div class="whl-sug-spinner"></div>
+          <span>Analisando conversa...</span>
+        </div>
+      `;
+    }
+    
     try {
-        // MÉTODO 1: SmartRepliesModule (usa AIService internamente agora)
-        if (window.SmartRepliesModule) {
-            // Verificar se está configurado
-            if (window.SmartRepliesModule.isConfigured && window.SmartRepliesModule.isConfigured()) {
-                console.log('[SuggestionInjector] Gerando via SmartRepliesModule...');
-                const contextMessages = window.SmartRepliesModule.getHistory?.(chatId) || [];
-                const suggestions = await window.SmartRepliesModule.generateSuggestions(chatId, contextMessages);
-                
-                if (suggestions && suggestions.length > 0) {
-                    showSuggestions(suggestions, chatId);
-                    return;
-                }
-            }
-        }
+      // CRÍTICO: Extrair mensagens REAIS do chat
+      const domMessages = extractMessagesFromDOM();
+      console.log('[SuggestionInjector] Mensagens extraídas:', domMessages.length);
+      
+      // MÉTODO 1: SmartRepliesModule com contexto real
+      if (window.SmartRepliesModule?.isConfigured?.()) {
+        console.log('[SuggestionInjector] Gerando via SmartRepliesModule...');
         
-        // MÉTODO 2: Fallback direto para AIService
-        if (window.AIService && window.AIService.isProviderConfigured?.()) {
-            console.log('[SuggestionInjector] Fallback: gerando via AIService direto...');
-            
-            // Obter contexto do chat atual
-            const context = await getConversationContext(chatId);
-            
-            const prompt = `Baseado no contexto da conversa, gere 1 sugestão de resposta profissional e útil.
-            
-Contexto:
-${context}
+        // Passar as mensagens extraídas do DOM
+        const contextMessages = domMessages.length > 0 ? domMessages : [];
+        const suggestions = await window.SmartRepliesModule.generateSuggestions(chatId, contextMessages);
+        
+        if (suggestions?.length > 0) {
+          showSuggestions(suggestions, chatId);
+          return;
+        }
+      }
+      
+      // MÉTODO 2: AIService direto com contexto do DOM
+      if (window.AIService?.isProviderConfigured?.()) {
+        console.log('[SuggestionInjector] Gerando via AIService...');
+        
+        // Formatar contexto
+        const contextText = domMessages.length > 0 
+          ? domMessages.map(m => `${m.role === 'user' ? 'Cliente' : 'Você'}: ${m.content}`).join('\n')
+          : 'Nova conversa - cliente acabou de enviar primeira mensagem.';
+        
+        const prompt = `Baseado na conversa abaixo, gere UMA sugestão de resposta profissional e contextualizada.
+
+CONVERSA:
+${contextText}
+
+ÚLTIMA MENSAGEM DO CLIENTE: ${domMessages.filter(m => m.role === 'user').pop()?.content || 'Mensagem não detectada'}
+
+INSTRUÇÕES:
+- Responda de forma profissional e útil
+- Seja conciso (máximo 2-3 frases)
+- Responda em português brasileiro
+- NÃO inclua saudações se a conversa já começou
 
 Responda APENAS com o texto da sugestão, sem formatação adicional.`;
-            
-            const result = await window.AIService.generateText(prompt, {
-                temperature: 0.7,
-                maxTokens: 200
-            });
-            
-            if (result && result.content) {
-                showSuggestions([{ text: result.content, type: 'ai' }], chatId);
-                return;
-            }
+        
+        const result = await window.AIService.generateText(prompt, {
+          temperature: 0.7,
+          maxTokens: 200
+        });
+        
+        if (result?.content) {
+          showSuggestions([{ text: result.content, type: 'ai' }], chatId);
+          return;
         }
-        
-        // MÉTODO 3: SmartBot como último fallback
-        if (window.smartBot && window.smartBot.generateResponse) {
-            console.log('[SuggestionInjector] Fallback: gerando via SmartBot...');
-            const response = await window.smartBot.generateResponse(chatId, '', []);
-            
-            if (response && response.text) {
-                showSuggestions([{ text: response.text, type: 'smartbot' }], chatId);
-                return;
-            }
-        }
-        
-        // Nenhum método disponível
-        showConfigurationNeeded();
-        
+      }
+      
+      // Nenhum método disponível
+      showConfigurationNeeded();
+      
     } catch (error) {
-        console.error('[SuggestionInjector] Error generating suggestion:', error);
-        showErrorSuggestion(error.message);
+      console.error('[SuggestionInjector] Erro:', error);
+      showErrorSuggestion(error.message);
     }
   }
 
   // Nova função auxiliar para obter contexto
   async function getConversationContext(chatId) {
     try {
-        // Tentar obter do CopilotEngine
-        if (window.CopilotEngine && window.CopilotEngine.getContext) {
-            const ctx = window.CopilotEngine.getContext(chatId);
-            if (ctx && ctx.messages && ctx.messages.length > 0) {
-                return ctx.messages.slice(-5).map(m => `${m.role}: ${m.content}`).join('\n');
-            }
+      // PRIORIDADE 1: Extrair mensagens DIRETAMENTE do DOM (mais confiável)
+      const domMessages = extractMessagesFromDOM();
+      if (domMessages.length > 0) {
+        console.log('[SuggestionInjector] Usando contexto do DOM');
+        return domMessages.slice(-5).map(m => `${m.role === 'user' ? 'Cliente' : 'Você'}: ${m.content}`).join('\n');
+      }
+      
+      // PRIORIDADE 2: Tentar Store do WhatsApp
+      if (window.Store?.Msg?.getModelsArray) {
+        const msgs = window.Store.Msg.getModelsArray().slice(-10);
+        if (msgs.length > 0) {
+          return msgs.map(m => `${m.fromMe ? 'Você' : 'Cliente'}: ${m.body || ''}`).join('\n');
         }
-        
-        // Tentar obter do SmartRepliesModule
-        if (window.SmartRepliesModule && window.SmartRepliesModule.getHistory) {
-            const history = window.SmartRepliesModule.getHistory(chatId);
-            if (history && history.length > 0) {
-                return history.slice(-5).map(m => `${m.role}: ${m.content}`).join('\n');
-            }
+      }
+      
+      // PRIORIDADE 3: CopilotEngine
+      if (window.CopilotEngine?.getContext) {
+        const ctx = window.CopilotEngine.getContext(chatId);
+        if (ctx?.messages?.length > 0) {
+          return ctx.messages.slice(-5).map(m => `${m.role}: ${m.content}`).join('\n');
         }
-        
-        return 'Sem contexto disponível. Gere uma saudação profissional.';
+      }
+      
+      // PRIORIDADE 4: SmartRepliesModule history
+      if (window.SmartRepliesModule?.getHistory) {
+        const history = window.SmartRepliesModule.getHistory(chatId);
+        if (history?.length > 0) {
+          return history.slice(-5).map(m => `${m.role}: ${m.content}`).join('\n');
+        }
+      }
+      
+      return 'Sem contexto disponível. Gere uma saudação profissional.';
     } catch (e) {
-        return 'Sem contexto disponível. Gere uma saudação profissional.';
+      console.error('[SuggestionInjector] Erro ao obter contexto:', e);
+      return 'Sem contexto disponível. Gere uma saudação profissional.';
     }
   }
 
   // Nova função para mostrar que precisa configurar
   function showConfigurationNeeded() {
-    const panel = document.getElementById('whl-suggestion-panel');
-    if (!panel) return;
+    const body = document.getElementById('whl-sug-body');
+    if (!body) return;
     
-    const content = panel.querySelector('.whl-suggestion-content');
-    if (content) {
-        content.innerHTML = `
-            <div style="padding: 16px; text-align: center;">
-                <div style="font-size: 24px; margin-bottom: 8px;">⚙️</div>
-                <div style="color: #fbbf24; font-weight: 500; margin-bottom: 8px;">Configure a IA</div>
-                <div style="color: rgba(255,255,255,0.6); font-size: 12px; margin-bottom: 12px;">
-                    Abra o painel lateral e configure o provider de IA nas Configurações.
-                </div>
-                <button onclick="window.openSidePanel?.('ai')" style="
-                    background: linear-gradient(135deg, #8b5cf6, #6366f1);
-                    border: none;
-                    color: white;
-                    padding: 8px 16px;
-                    border-radius: 8px;
-                    cursor: pointer;
-                    font-size: 12px;
-                ">
-                    🔧 Abrir Configurações
-                </button>
-            </div>
-        `;
-    }
+    body.innerHTML = `
+      <div style="padding: 16px; text-align: center;">
+        <div style="font-size: 24px; margin-bottom: 8px;">⚙️</div>
+        <div style="color: #fbbf24; font-weight: 500; margin-bottom: 8px;">Configure a IA</div>
+        <div style="color: rgba(255,255,255,0.6); font-size: 12px; margin-bottom: 12px;">
+          Abra o painel lateral e configure o provider de IA nas Configurações.
+        </div>
+      </div>
+    `;
   }
 
   // Nova função para mostrar erro
   function showErrorSuggestion(errorMessage) {
-    const panel = document.getElementById('whl-suggestion-panel');
-    if (!panel) return;
+    const body = document.getElementById('whl-sug-body');
+    if (!body) return;
     
-    const content = panel.querySelector('.whl-suggestion-content');
-    if (content) {
-        content.innerHTML = `
-            <div style="padding: 16px; text-align: center;">
-                <div style="font-size: 24px; margin-bottom: 8px;">❌</div>
-                <div style="color: #ef4444; font-weight: 500; margin-bottom: 4px;">Erro ao gerar</div>
-                <div style="color: rgba(255,255,255,0.5); font-size: 11px;">${errorMessage || 'Tente novamente'}</div>
-            </div>
-        `;
-    }
+    body.innerHTML = `
+      <div style="padding: 16px; text-align: center;">
+        <div style="font-size: 24px; margin-bottom: 8px;">❌</div>
+        <div style="color: #ef4444; font-weight: 500; margin-bottom: 4px;">Erro ao gerar</div>
+        <div style="color: rgba(255,255,255,0.5); font-size: 11px;">${errorMessage || 'Tente novamente'}</div>
+      </div>
+    `;
   }
 
   function getCurrentChatId() {
