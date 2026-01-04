@@ -40,7 +40,7 @@
     
     // Fallback: execCommand
     element.focus();
-    await insertTextWithHumanTyping(inputField, text);
+    document.execCommand('insertText', false, text);
     element.dispatchEvent(new Event('input', { bubbles: true }));
     return true;
   }
@@ -65,13 +65,12 @@
 
   // ============================================
   // MODOS DE OPERAÇÃO
+  // v7.5.0: Removed PASSIVE and AUTO_DRAFT modes
   // ============================================
   const MODES = {
     OFF: { id: 'off', name: '🔴 Desativado', description: 'Copilot desativado' },
-    PASSIVE: { id: 'passive', name: '👁️ Observador', description: 'Analisa mas não sugere' },
     SUGGEST: { id: 'suggest', name: '💡 Sugestões', description: 'Mostra sugestões de resposta' },
     ASSIST: { id: 'assist', name: '🤝 Assistente', description: 'Ajuda a compor respostas' },
-    AUTO_DRAFT: { id: 'auto_draft', name: '📝 Auto-rascunho', description: 'Gera rascunhos automáticos' },
     SEMI_AUTO: { id: 'semi_auto', name: '⚡ Semi-automático', description: 'Envia após aprovação' },
     FULL_AUTO: { id: 'full_auto', name: '🤖 Automático', description: 'Responde automaticamente' }
   };
@@ -471,15 +470,13 @@ Diretrizes:
       case MODES.SUGGEST.id:
         await generateSuggestions(chatId, analysis);
         break;
-      case MODES.AUTO_DRAFT.id:
-        await generateDraft(chatId, analysis);
-        break;
       case MODES.SEMI_AUTO.id:
         await generateAndQueue(chatId, analysis);
         break;
       case MODES.FULL_AUTO.id:
         await generateAndSend(chatId, analysis);
         break;
+      // v7.5.0: Removed PASSIVE and AUTO_DRAFT cases
     }
   }
 
@@ -1128,23 +1125,7 @@ DIRETRIZES OBRIGATÓRIAS:
     }
   }
 
-  async function generateDraft(chatId, analysis) {
-    try {
-      const response = await generateResponse(chatId, analysis);
-
-      if (window.EventBus) {
-        window.EventBus.emit('copilot:draft', {
-          chatId,
-          content: response.content,
-          confidence: response.confidence
-        });
-      }
-
-      return response;
-    } catch (error) {
-      console.error('[CopilotEngine] Erro ao gerar draft:', error);
-    }
-  }
+  // v7.5.0: generateDraft() removed - AUTO_DRAFT mode no longer exists
 
   async function generateAndQueue(chatId, analysis) {
     try {

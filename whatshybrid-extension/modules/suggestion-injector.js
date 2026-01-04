@@ -110,20 +110,21 @@
   }
 
 
-  'use strict';
-
   const CONFIG = {
     PANEL_ID: 'whl-suggestions-panel',
     MAX_SUGGESTIONS: 1, // Show only ONE best suggestion
-    AUTO_HIDE_DELAY: 0, // 0 = NUNCA fecha automaticamente - usuário fecha manualmente
-    ANIMATION_DURATION: 300
+    // v7.5.0: AUTO_HIDE_DELAY removed - no auto-hide behavior
+    ANIMATION_DURATION: 300,
+    // FAB positioning - positioned above WhatsApp input field to avoid overlapping send button
+    // WhatsApp's input field is approximately 50px height, send button is ~60px from right edge
+    FAB_BOTTOM: '60px',  // 10px clearance above input field
+    FAB_RIGHT: '80px'    // 20px clearance from send button
   };
 
   const state = {
     isVisible: false,
     currentSuggestions: [],
     currentChatId: null,
-    hideTimeout: null,
     initialized: false
   };
 
@@ -357,50 +358,34 @@
         opacity: 1;
       }
 
-      /* Botão flutuante minimizado - 🤖 Robot Button */
-      .whl-sug-fab {
-        position: fixed;
-        bottom: 80px;
-        right: 20px;
-        width: 50px;
-        height: 50px;
-        background: linear-gradient(135deg, #8B5CF6 0%, #3B82F6 100%);
-        border-radius: 50%;
-        border: none;
-        color: white;
-        font-size: 24px;
-        cursor: pointer;
-        box-shadow: 0 4px 20px rgba(139, 92, 246, 0.5);
-        z-index: 99997;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: all 0.3s;
-      }
-
-      .whl-sug-fab:hover {
-        transform: scale(1.1);
-        box-shadow: 0 6px 24px rgba(139, 92, 246, 0.7);
-      }
-
-      .whl-sug-fab.visible {
-        display: flex;
-      }
-
-      .whl-sug-fab-badge {
+      /* Botão flutuante - 🤖 Robot Button v7.5.0 */
+      #whl-suggestion-fab {
         position: absolute;
-        top: -5px;
-        right: -5px;
-        background: #ef4444;
-        color: white;
-        font-size: 10px;
-        font-weight: 700;
-        width: 20px;
-        height: 20px;
+        bottom: ${CONFIG.FAB_BOTTOM};  /* Above input field */
+        right: ${CONFIG.FAB_RIGHT};    /* Left of send button */
+        width: 40px;
+        height: 40px;
         border-radius: 50%;
+        background: linear-gradient(135deg, #8B5CF6, #3B82F6);
+        border: none;
+        cursor: pointer;
         display: flex;
         align-items: center;
         justify-content: center;
+        font-size: 20px;
+        box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
+        z-index: 1000;
+        transition: transform 0.2s, box-shadow 0.2s;
+      }
+      
+      /* Fallback for when button is on body instead of footer */
+      body > #whl-suggestion-fab {
+        position: fixed;
+      }
+
+      #whl-suggestion-fab:hover {
+        transform: scale(1.1);
+        box-shadow: 0 6px 16px rgba(139, 92, 246, 0.5);
       }
     `;
     document.head.appendChild(styles);
@@ -433,19 +418,31 @@
 
     document.body.appendChild(panel);
 
-    // Botão flutuante
+    // Botão flutuante 🤖 v7.5.0 - Positioned above input field
     const fab = document.createElement('button');
-    fab.className = 'whl-sug-fab';
-    fab.id = 'whl-sug-fab';
-    fab.innerHTML = '🤖<span class="whl-sug-fab-badge" id="whl-sug-fab-badge" style="display:none">0</span>';
-    fab.title = 'Abrir/Fechar Sugestões de IA';
-    document.body.appendChild(fab);
+    fab.id = 'whl-suggestion-fab';
+    fab.innerHTML = '🤖';
+    fab.title = 'Abrir/Fechar Sugestões de IA (Toggle)';
+    
+    // Find the footer to attach the button relative to it
+    const footer = document.querySelector('#main footer') || document.querySelector('footer');
+    if (footer) {
+      // Only set position if it's currently static (defensive approach)
+      const currentPosition = window.getComputedStyle(footer).position;
+      if (currentPosition === 'static') {
+        footer.style.position = 'relative';
+      }
+      footer.appendChild(fab);
+    } else {
+      // Fallback: append to body with fixed positioning
+      document.body.appendChild(fab);
+    }
 
-    // Event listeners
+    // Event listeners - v7.5.0: Toggle behavior, no auto-close
     document.getElementById('whl-sug-close').addEventListener('click', hidePanel);
     fab.addEventListener('click', togglePanel);
 
-    console.log('[SuggestionInjector] 💡 Painel criado');
+    console.log('[SuggestionInjector] 💡 Painel criado com botão 🤖');
   }
 
   // ============================================================
@@ -460,16 +457,11 @@
 
     const body = document.getElementById('whl-sug-body');
     const count = document.getElementById('whl-sug-count');
-    const fabBadge = document.getElementById('whl-sug-fab-badge');
 
     if (!body) return;
 
     // Atualiza contador
     if (count) count.textContent = suggestions.length;
-    if (fabBadge) {
-      fabBadge.textContent = suggestions.length;
-      fabBadge.style.display = suggestions.length > 0 ? 'flex' : 'none';
-    }
 
     // Renderiza sugestões
     body.innerHTML = suggestions.slice(0, CONFIG.MAX_SUGGESTIONS).map((sug, i) => {
@@ -517,8 +509,8 @@
     // Mostra o painel
     showPanel();
 
-    // Auto-hide após delay
-    resetAutoHide();
+    // v7.5.0: NO auto-hide - user closes manually via X or toggle button
+    // resetAutoHide(); // REMOVED
 
     console.log('[SuggestionInjector] 💡', suggestions.length, 'sugestões exibidas');
   }
@@ -599,7 +591,7 @@
       panel.classList.add('visible');
       state.isVisible = true;
     }
-    // Keep FAB visible - don't hide it
+    // v7.5.0: FAB always visible, doesn't hide
   }
 
   function hidePanel() {
@@ -609,7 +601,7 @@
       panel.classList.remove('visible');
       state.isVisible = false;
     }
-    // Keep FAB visible always
+    // v7.5.0: FAB always visible
   }
 
   function togglePanel() {
@@ -776,17 +768,7 @@ Responda APENAS com o texto da sugestão, sem formatação adicional.`;
     }
   }
 
-  function resetAutoHide() {
-    if (state.hideTimeout) {
-      clearTimeout(state.hideTimeout);
-    }
-    // Se AUTO_HIDE_DELAY = 0, não esconde automaticamente
-    if (CONFIG.AUTO_HIDE_DELAY > 0) {
-      state.hideTimeout = setTimeout(() => {
-        hidePanel();
-      }, CONFIG.AUTO_HIDE_DELAY);
-    }
-  }
+  // v7.5.0: resetAutoHide() removed - no auto-hide behavior
 
   // ============================================================
   // UTILIDADES
