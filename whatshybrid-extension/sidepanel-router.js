@@ -3513,6 +3513,58 @@ function showView(viewName) {
   window.exportReportCSV = exportReportCSV;
   window.copyFailedNumbers = copyFailedNumbers;
 
+  // ========= Inicialização dos Novos Widgets =========
+  function initializeNewWidgets() {
+    console.log('[SidePanel Router] 🎯 Inicializando novos widgets...');
+
+    // Trust System Widget
+    const trustContainer = document.getElementById('trust-system-widget');
+    if (trustContainer && window.TrustSystem) {
+      try {
+        window.TrustSystem.renderTrustWidget(trustContainer);
+        console.log('[SidePanel Router] ✅ Trust System widget renderizado');
+      } catch (e) {
+        console.error('[SidePanel Router] Erro ao renderizar Trust System:', e);
+      }
+    }
+
+    // Quick Commands Widget
+    const quickCommandsContainer = document.getElementById('quick-commands-widget');
+    if (quickCommandsContainer && window.QuickCommands) {
+      try {
+        window.QuickCommands.renderCommandsManager(quickCommandsContainer);
+        console.log('[SidePanel Router] ✅ Quick Commands widget renderizado');
+      } catch (e) {
+        console.error('[SidePanel Router] Erro ao renderizar Quick Commands:', e);
+      }
+    }
+
+    // Team System Widget
+    const teamContainer = document.getElementById('team-system-widget');
+    if (teamContainer && window.TeamSystem) {
+      try {
+        window.TeamSystem.renderTeamPanel(teamContainer);
+        console.log('[SidePanel Router] ✅ Team System widget renderizado');
+      } catch (e) {
+        console.error('[SidePanel Router] Erro ao renderizar Team System:', e);
+      }
+    }
+  }
+
+  // Inicializar widgets após um delay para garantir que os módulos foram carregados
+  setTimeout(() => {
+    initializeNewWidgets();
+  }, 2000);
+
+  // Reinicializar widgets quando a aba AI for aberta
+  document.addEventListener('click', (e) => {
+    if (e.target.dataset.view === 'ai' || e.target.dataset.aiTab) {
+      setTimeout(() => {
+        initializeNewWidgets();
+      }, 300);
+    }
+  });
+
 
   // ========= Fallback: Verificação periódica de view =========
   setInterval(async () => {

@@ -1,297 +1,638 @@
 /**
- * Team System v1.0.0
- * Broadcast para múltiplos contatos da equipe
+ * 👥 Team System - Sistema de Equipe e Colaboração
+ *
+ * Permite gerenciar múltiplos usuários/agentes trabalhando no mesmo WhatsApp.
+ *
+ * Features:
+ * - Gestão de membros da equipe
+ * - Atribuição de conversas
+ * - Status de disponibilidade
+ * - Transferência de atendimento
+ * - Estatísticas por membro
+ * - Notas internas
+ *
+ * @version 1.0.0
  */
 
-class TeamSystem {
-  constructor() {
-    this.STORAGE_KEY = 'whl_team_members';
-    this.members = [];
-    this.senderName = '';
-    this.init();
-  }
+(function() {
+  'use strict';
 
-  async init() {
-    await this.loadData();
-    console.log('[TeamSystem] ✅ Inicializado com', this.members.length, 'membros');
-  }
+  const STORAGE_KEY = 'whl_team_system_v1';
 
-  // Carregar dados
-  async loadData() {
-    const data = await chrome.storage.local.get([this.STORAGE_KEY, 'whl_sender_name']);
-    this.members = data[this.STORAGE_KEY] || [];
-    this.senderName = data.whl_sender_name || '';
-  }
+  // Roles disponíveis
+  const ROLES = {
+    ADMIN: { id: 'admin', name: 'Administrador', color: '#ef4444', permissions: ['all'] },
+    MANAGER: { id: 'manager', name: 'Gerente', color: '#f59e0b', permissions: ['assign', 'view_all', 'stats'] },
+    AGENT: { id: 'agent', name: 'Agente', color: '#10b981', permissions: ['chat', 'notes'] },
+    VIEWER: { id: 'viewer', name: 'Visualizador', color: '#6b7280', permissions: ['view'] }
+  };
 
-  // Salvar dados
-  async saveData() {
-    await chrome.storage.local.set({
-      [this.STORAGE_KEY]: this.members,
-      'whl_sender_name': this.senderName
-    });
-  }
+  // Status de disponibilidade
+  const STATUSES = {
+    AVAILABLE: { id: 'available', name: 'Disponível', icon: '🟢', color: '#10b981' },
+    BUSY: { id: 'busy', name: 'Ocupado', icon: '🟡', color: '#f59e0b' },
+    AWAY: { id: 'away', name: 'Ausente', icon: '🔴', color: '#ef4444' },
+    OFFLINE: { id: 'offline', name: 'Offline', icon: '⚫', color: '#6b7280' }
+  };
 
-  // CRUD de membros
-  async addMember(name, phone) {
-    const cleanPhone = phone.replace(/\D/g, '');
-    
-    // Phone number validation constants
-    const MIN_PHONE_DIGITS = 10; // Minimum for most countries
-    const MAX_PHONE_DIGITS = 15; // ITU E.164 standard
-    
-    // Validação
-    if (cleanPhone.length < MIN_PHONE_DIGITS || cleanPhone.length > MAX_PHONE_DIGITS) {
-      throw new Error(`Número deve ter entre ${MIN_PHONE_DIGITS} e ${MAX_PHONE_DIGITS} dígitos`);
+  let state = {
+    currentUser: null,
+    members: [],
+    assignments: {}, // chatId -> userId
+    notes: {}, // chatId -> [{ userId, text, timestamp }]
+    statistics: {},
+    initialized: false
+  };
+
+  // ============================================================
+  // INICIALIZAÇÃO
+  // ============================================================
+
+  async function init() {
+    if (state.initialized) return;
+
+    console.log('[TeamSystem] 👥 Inicializando Sistema de Equipe...');
+
+    await loadState();
+    await identifyCurrentUser();
+
+    state.initialized = true;
+    console.log('[TeamSystem] ✅ Inicializado - Usuário:', state.currentUser?.name);
+
+    // Emitir evento
+    if (window.EventBus) {
+      window.EventBus.emit('teamsystem:initialized', {
+        user: state.currentUser,
+        members: state.members.length
+      });
     }
-    
-    // Verifica duplicata
-    if (this.members.some(m => m.phone === cleanPhone)) {
-      throw new Error('Número já cadastrado');
-    }
-
-    const member = {
-      id: `tm_${Date.now()}`,
-      name: name || '',
-      phone: cleanPhone,
-      selected: false,
-      messagesSent: 0,
-      lastMessageAt: null,
-      createdAt: new Date().toISOString()
-    };
-
-    this.members.push(member);
-    await this.saveData();
-    
-    return member;
   }
 
-  async removeMember(id) {
-    this.members = this.members.filter(m => m.id !== id);
-    await this.saveData();
-  }
+  // ============================================================
+  // PERSISTÊNCIA
+  // ============================================================
 
-  async updateMember(id, updates) {
-    const member = this.members.find(m => m.id === id);
-    if (member) {
-      Object.assign(member, updates);
-      await this.saveData();
-    }
-    return member;
-  }
-
-  // Seleção
-  toggleSelection(id) {
-    const member = this.members.find(m => m.id === id);
-    if (member) {
-      member.selected = !member.selected;
-    }
-    return member;
-  }
-
-  selectAll() {
-    this.members.forEach(m => m.selected = true);
-  }
-
-  clearSelection() {
-    this.members.forEach(m => m.selected = false);
-  }
-
-  getSelected() {
-    return this.members.filter(m => m.selected);
-  }
-
-  // Nome do remetente
-  async setSenderName(name) {
-    this.senderName = name;
-    await this.saveData();
-  }
-
-  // Enviar mensagem para equipe
-  async sendToTeam(message, options = {}) {
-    const selected = this.getSelected();
-    
-    if (selected.length === 0) {
-      throw new Error('Nenhum membro selecionado');
-    }
-    
-    if (!message || !message.trim()) {
-      throw new Error('Mensagem vazia');
-    }
-
-    // Formatar mensagem com nome do remetente
-    const fullMessage = this.senderName 
-      ? `*${this.senderName}:* ${message}` 
-      : message;
-
-    const results = {
-      total: selected.length,
-      success: 0,
-      failed: 0,
-      details: []
-    };
-
-    const delayMin = options.delayMin || 3000;
-    const delayMax = options.delayMax || 7000;
-
-    for (let i = 0; i < selected.length; i++) {
-      const member = selected[i];
-      
-      try {
-        // Abrir chat
-        const chatOpened = await this.openChat(member.phone);
-        if (!chatOpened) {
-          throw new Error('Não foi possível abrir o chat');
-        }
-
-        // Aguardar chat carregar
-        await this.sleep(2000);
-
-        // Enviar mensagem
-        const sent = await this.sendMessage(fullMessage);
-        
-        if (sent) {
-          results.success++;
-          member.messagesSent = (member.messagesSent || 0) + 1;
-          member.lastMessageAt = new Date().toISOString();
-          
-          results.details.push({
-            member: member.name || member.phone,
-            status: 'success'
-          });
-        } else {
-          throw new Error('Falha ao enviar');
-        }
-
-        // Delay entre envios
-        if (i < selected.length - 1) {
-          const delay = Math.random() * (delayMax - delayMin) + delayMin;
-          await this.sleep(delay);
-        }
-
-      } catch (error) {
-        results.failed++;
-        results.details.push({
-          member: member.name || member.phone,
-          status: 'failed',
-          error: error.message
-        });
-        console.error('[TeamSystem] Erro ao enviar para', member.phone, error);
-      }
-    }
-
-    // Salvar estatísticas
-    await this.saveData();
-
-    // Limpar seleção após envio
-    if (options.clearAfterSend !== false) {
-      this.clearSelection();
-    }
-
-    console.log('[TeamSystem] Envio concluído:', results);
-    return results;
-  }
-
-  // Abrir chat por número
-  async openChat(phone) {
-    const cleanPhone = phone.replace(/\D/g, '');
-
-    // Método 1: Via Store.Cmd
-    if (window.Store?.Cmd?.openChatAt) {
-      try {
-        await window.Store.Cmd.openChatAt(cleanPhone + '@c.us');
-        return true;
-      } catch (e) {}
-    }
-
-    // Método 2: Via URL
+  async function loadState() {
     try {
-      window.location.href = `https://web.whatsapp.com/send?phone=${cleanPhone}`;
-      await this.sleep(3000);
-      return true;
-    } catch (e) {}
+      const result = await chrome.storage.local.get(STORAGE_KEY);
+      if (result[STORAGE_KEY]) {
+        state = { ...state, ...result[STORAGE_KEY] };
+      }
 
-    return false;
+      // Criar usuário padrão se não existir
+      if (state.members.length === 0) {
+        state.members.push({
+          id: 'default_user',
+          name: 'Usuário Principal',
+          email: '',
+          role: 'admin',
+          status: 'available',
+          avatar: '👤',
+          joinedAt: Date.now(),
+          stats: {
+            chatsHandled: 0,
+            messagesСent: 0,
+            avgResponseTime: 0,
+            satisfaction: 0
+          }
+        });
+        await saveState();
+      }
+    } catch (e) {
+      console.error('[TeamSystem] Erro ao carregar estado:', e);
+    }
   }
 
-  // Enviar mensagem no chat atual
-  async sendMessage(text) {
-    // Aguardar composer
-    let composer = null;
-    for (let i = 0; i < 10; i++) {
-      composer = document.querySelector('footer div[contenteditable="true"][role="textbox"]') ||
-                 document.querySelector('[data-testid="conversation-compose-box-input"]');
-      if (composer) break;
-      await this.sleep(500);
+  async function saveState() {
+    try {
+      await chrome.storage.local.set({ [STORAGE_KEY]: state });
+    } catch (e) {
+      console.error('[TeamSystem] Erro ao salvar estado:', e);
+    }
+  }
+
+  // ============================================================
+  // GERENCIAMENTO DE USUÁRIOS
+  // ============================================================
+
+  async function identifyCurrentUser() {
+    // Tentar identificar usuário atual
+    // Por padrão, usa o primeiro membro da lista
+    if (!state.currentUser && state.members.length > 0) {
+      state.currentUser = state.members[0];
+      await saveState();
+    }
+  }
+
+  function setCurrentUser(userId) {
+    const user = state.members.find(m => m.id === userId);
+    if (!user) return false;
+
+    state.currentUser = user;
+    saveState();
+
+    console.log('[TeamSystem] Usuário atual:', user.name);
+
+    // Emitir evento
+    if (window.EventBus) {
+      window.EventBus.emit('teamsystem:user_changed', { user });
     }
 
-    if (!composer) {
-      console.error('[TeamSystem] Composer não encontrado');
-      return false;
-    }
-
-    // Digitar mensagem
-    composer.focus();
-    await this.sleep(200);
-
-    if (window.HumanTyping?.typeInWhatsApp) {
-      await window.HumanTyping.typeInWhatsApp(text);
-    } else {
-      composer.textContent = text;
-      composer.dispatchEvent(new Event('input', { bubbles: true }));
-    }
-
-    await this.sleep(300);
-
-    // Clicar em enviar
-    const sendBtn = document.querySelector('[data-testid="send"]') ||
-                    document.querySelector('button[aria-label*="Enviar"]') ||
-                    document.querySelector('span[data-icon="send"]')?.parentElement;
-
-    if (sendBtn) {
-      sendBtn.click();
-      await this.sleep(500);
-      return true;
-    }
-
-    // Fallback: Enter
-    composer.dispatchEvent(new KeyboardEvent('keydown', { 
-      key: 'Enter', 
-      keyCode: 13, 
-      bubbles: true 
-    }));
-    
     return true;
   }
 
-  sleep(ms) {
-    return new Promise(r => setTimeout(r, ms));
-  }
+  function addMember(name, email, role = 'agent', avatar = '👤') {
+    const id = `user_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
-  // Formatar número para exibição
-  formatPhone(phone) {
-    if (phone.length === 13) {
-      return phone.replace(/(\d{2})(\d{2})(\d{5})(\d{4})/, '+$1 ($2) $3-$4');
-    } else if (phone.length === 11) {
-      return phone.replace(/(\d{2})(\d{5})(\d{4})/, '($1) $2-$3');
+    const member = {
+      id,
+      name,
+      email,
+      role,
+      status: 'available',
+      avatar,
+      joinedAt: Date.now(),
+      stats: {
+        chatsHandled: 0,
+        messagesSent: 0,
+        avgResponseTime: 0,
+        satisfaction: 0
+      }
+    };
+
+    state.members.push(member);
+    saveState();
+
+    console.log('[TeamSystem] Membro adicionado:', name);
+
+    // Emitir evento
+    if (window.EventBus) {
+      window.EventBus.emit('teamsystem:member_added', { member });
     }
-    return phone;
+
+    return member;
   }
 
-  // API pública
-  getAll() { return [...this.members]; }
-  getSenderName() { return this.senderName; }
-  
-  getStats() {
+  function removeMember(userId) {
+    const index = state.members.findIndex(m => m.id === userId);
+    if (index === -1) return false;
+
+    // Não permitir remover o último admin
+    const member = state.members[index];
+    if (member.role === 'admin') {
+      const admins = state.members.filter(m => m.role === 'admin');
+      if (admins.length === 1) {
+        console.warn('[TeamSystem] Não é possível remover o último administrador');
+        return false;
+      }
+    }
+
+    state.members.splice(index, 1);
+
+    // Remover atribuições deste usuário
+    Object.keys(state.assignments).forEach(chatId => {
+      if (state.assignments[chatId] === userId) {
+        delete state.assignments[chatId];
+      }
+    });
+
+    saveState();
+
+    console.log('[TeamSystem] Membro removido:', userId);
+
+    return true;
+  }
+
+  function updateMemberStatus(userId, status) {
+    const member = state.members.find(m => m.id === userId);
+    if (!member) return false;
+
+    member.status = status;
+    saveState();
+
+    console.log('[TeamSystem] Status atualizado:', member.name, '→', status);
+
+    // Emitir evento
+    if (window.EventBus) {
+      window.EventBus.emit('teamsystem:status_changed', { userId, status });
+    }
+
+    return true;
+  }
+
+  function updateMemberRole(userId, role) {
+    const member = state.members.find(m => m.id === userId);
+    if (!member) return false;
+
+    member.role = role;
+    saveState();
+
+    console.log('[TeamSystem] Role atualizado:', member.name, '→', role);
+
+    return true;
+  }
+
+  // ============================================================
+  // ATRIBUIÇÃO DE CONVERSAS
+  // ============================================================
+
+  function assignChat(chatId, userId) {
+    const member = state.members.find(m => m.id === userId);
+    if (!member) return false;
+
+    const previousAssignee = state.assignments[chatId];
+    state.assignments[chatId] = userId;
+
+    // Atualizar estatísticas
+    if (!member.stats) {
+      member.stats = { chatsHandled: 0, messagesSent: 0, avgResponseTime: 0, satisfaction: 0 };
+    }
+    member.stats.chatsHandled++;
+
+    saveState();
+
+    console.log('[TeamSystem] Chat', chatId, 'atribuído para', member.name);
+
+    // Emitir evento
+    if (window.EventBus) {
+      window.EventBus.emit('teamsystem:chat_assigned', {
+        chatId,
+        userId,
+        previousAssignee
+      });
+    }
+
+    return true;
+  }
+
+  function unassignChat(chatId) {
+    if (!state.assignments[chatId]) return false;
+
+    const userId = state.assignments[chatId];
+    delete state.assignments[chatId];
+
+    saveState();
+
+    console.log('[TeamSystem] Chat', chatId, 'desatribuído');
+
+    // Emitir evento
+    if (window.EventBus) {
+      window.EventBus.emit('teamsystem:chat_unassigned', { chatId, userId });
+    }
+
+    return true;
+  }
+
+  function getAssignedUser(chatId) {
+    const userId = state.assignments[chatId];
+    if (!userId) return null;
+
+    return state.members.find(m => m.id === userId);
+  }
+
+  function getUserChats(userId) {
+    return Object.entries(state.assignments)
+      .filter(([_, assignedUserId]) => assignedUserId === userId)
+      .map(([chatId]) => chatId);
+  }
+
+  function transferChat(chatId, fromUserId, toUserId) {
+    const fromUser = state.members.find(m => m.id === fromUserId);
+    const toUser = state.members.find(m => m.id === toUserId);
+
+    if (!fromUser || !toUser) return false;
+
+    if (state.assignments[chatId] !== fromUserId) {
+      console.warn('[TeamSystem] Chat não está atribuído para', fromUser.name);
+      return false;
+    }
+
+    assignChat(chatId, toUserId);
+
+    console.log('[TeamSystem] Chat transferido de', fromUser.name, 'para', toUser.name);
+
+    // Adicionar nota automática
+    addNote(chatId, null, `Chat transferido de ${fromUser.name} para ${toUser.name}`, true);
+
+    return true;
+  }
+
+  // ============================================================
+  // NOTAS INTERNAS
+  // ============================================================
+
+  function addNote(chatId, userId, text, isSystem = false) {
+    if (!state.notes[chatId]) {
+      state.notes[chatId] = [];
+    }
+
+    const note = {
+      id: `note_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      userId: isSystem ? null : (userId || state.currentUser?.id),
+      text,
+      timestamp: Date.now(),
+      isSystem
+    };
+
+    state.notes[chatId].push(note);
+
+    // Manter apenas últimas 50 notas por chat
+    if (state.notes[chatId].length > 50) {
+      state.notes[chatId] = state.notes[chatId].slice(-50);
+    }
+
+    saveState();
+
+    console.log('[TeamSystem] Nota adicionada ao chat', chatId);
+
+    // Emitir evento
+    if (window.EventBus) {
+      window.EventBus.emit('teamsystem:note_added', { chatId, note });
+    }
+
+    return note;
+  }
+
+  function getNotes(chatId) {
+    return state.notes[chatId] || [];
+  }
+
+  function deleteNote(chatId, noteId) {
+    if (!state.notes[chatId]) return false;
+
+    const index = state.notes[chatId].findIndex(n => n.id === noteId);
+    if (index === -1) return false;
+
+    state.notes[chatId].splice(index, 1);
+    saveState();
+
+    return true;
+  }
+
+  // ============================================================
+  // ESTATÍSTICAS
+  // ============================================================
+
+  function getTeamStats() {
+    const stats = {
+      totalMembers: state.members.length,
+      activeMembers: state.members.filter(m => m.status === 'available').length,
+      totalChatsAssigned: Object.keys(state.assignments).length,
+      memberStats: state.members.map(m => ({
+        id: m.id,
+        name: m.name,
+        role: m.role,
+        status: m.status,
+        chatsHandled: m.stats?.chatsHandled || 0,
+        messagesSent: m.stats?.messagesSent || 0,
+        avgResponseTime: m.stats?.avgResponseTime || 0
+      }))
+    };
+
+    return stats;
+  }
+
+  function getMemberStats(userId) {
+    const member = state.members.find(m => m.id === userId);
+    if (!member) return null;
+
     return {
-      totalMembers: this.members.length,
-      selectedCount: this.getSelected().length,
-      totalMessagesSent: this.members.reduce((sum, m) => sum + (m.messagesSent || 0), 0)
+      ...member.stats,
+      currentChats: getUserChats(userId).length
     };
   }
-}
 
-// Exportar
-window.TeamSystem = TeamSystem;
-window.teamSystem = new TeamSystem();
+  // ============================================================
+  // UI - RENDERIZAÇÃO
+  // ============================================================
 
-console.log('[TeamSystem] ✅ Módulo carregado');
+  function renderTeamPanel(container) {
+    const stats = getTeamStats();
+
+    container.innerHTML = `
+      <div class="team-panel">
+        <div class="team-header">
+          <h3>👥 Equipe</h3>
+          <button id="team-add-member-btn" class="mod-btn mod-btn-sm mod-btn-primary">➕ Adicionar</button>
+        </div>
+
+        <div class="team-stats">
+          <div class="team-stat">
+            <span class="stat-value">${stats.totalMembers}</span>
+            <span class="stat-label">Membros</span>
+          </div>
+          <div class="team-stat">
+            <span class="stat-value">${stats.activeMembers}</span>
+            <span class="stat-label">Disponíveis</span>
+          </div>
+          <div class="team-stat">
+            <span class="stat-value">${stats.totalChatsAssigned}</span>
+            <span class="stat-label">Chats Ativos</span>
+          </div>
+        </div>
+
+        <div class="team-members">
+          ${state.members.map(member => {
+            const statusInfo = STATUSES[member.status.toUpperCase()] || STATUSES.OFFLINE;
+            const roleInfo = ROLES[member.role.toUpperCase()] || ROLES.AGENT;
+            const userChats = getUserChats(member.id).length;
+
+            return `
+              <div class="team-member" data-user-id="${member.id}">
+                <div class="member-avatar">${member.avatar}</div>
+                <div class="member-info">
+                  <div class="member-name">${member.name}</div>
+                  <div class="member-meta">
+                    <span class="member-role" style="color: ${roleInfo.color}">${roleInfo.name}</span>
+                    <span class="member-chats">${userChats} chats</span>
+                  </div>
+                </div>
+                <div class="member-status" style="color: ${statusInfo.color}">
+                  ${statusInfo.icon}
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+
+    // Event listeners
+    container.querySelector('#team-add-member-btn')?.addEventListener('click', () => {
+      showAddMemberDialog(container);
+    });
+
+    // Adicionar estilos
+    if (!document.getElementById('team-system-styles')) {
+      const styles = document.createElement('style');
+      styles.id = 'team-system-styles';
+      styles.textContent = `
+        .team-panel {
+          background: rgba(26, 26, 46, 0.95);
+          border-radius: 12px;
+          padding: 16px;
+          color: white;
+        }
+
+        .team-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 16px;
+        }
+
+        .team-stats {
+          display: flex;
+          gap: 12px;
+          margin-bottom: 16px;
+        }
+
+        .team-stat {
+          flex: 1;
+          background: rgba(255,255,255,0.05);
+          padding: 12px;
+          border-radius: 8px;
+          text-align: center;
+        }
+
+        .stat-value {
+          display: block;
+          font-size: 24px;
+          font-weight: 600;
+          margin-bottom: 4px;
+        }
+
+        .stat-label {
+          display: block;
+          font-size: 11px;
+          color: rgba(255,255,255,0.6);
+        }
+
+        .team-members {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .team-member {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 12px;
+          background: rgba(255,255,255,0.05);
+          border-radius: 8px;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .team-member:hover {
+          background: rgba(255,255,255,0.1);
+        }
+
+        .member-avatar {
+          font-size: 32px;
+        }
+
+        .member-info {
+          flex: 1;
+        }
+
+        .member-name {
+          font-weight: 600;
+          margin-bottom: 4px;
+        }
+
+        .member-meta {
+          display: flex;
+          gap: 8px;
+          font-size: 11px;
+          color: rgba(255,255,255,0.6);
+        }
+
+        .member-role {
+          font-weight: 600;
+        }
+
+        .member-status {
+          font-size: 20px;
+        }
+      `;
+      document.head.appendChild(styles);
+    }
+  }
+
+  function showAddMemberDialog(container) {
+    const dialog = document.createElement('div');
+    dialog.className = 'team-dialog-overlay';
+    dialog.innerHTML = `
+      <div class="team-dialog">
+        <h3>Adicionar Membro</h3>
+        <input type="text" id="team-new-name" placeholder="Nome" class="mod-input">
+        <input type="email" id="team-new-email" placeholder="Email" class="mod-input">
+        <select id="team-new-role" class="mod-input mod-select">
+          <option value="agent">Agente</option>
+          <option value="manager">Gerente</option>
+          <option value="admin">Administrador</option>
+        </select>
+        <div class="team-dialog-actions">
+          <button id="team-cancel-btn" class="mod-btn">Cancelar</button>
+          <button id="team-save-btn" class="mod-btn mod-btn-primary">Adicionar</button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(dialog);
+
+    dialog.querySelector('#team-cancel-btn').addEventListener('click', () => dialog.remove());
+    dialog.querySelector('#team-save-btn').addEventListener('click', () => {
+      const name = dialog.querySelector('#team-new-name').value.trim();
+      const email = dialog.querySelector('#team-new-email').value.trim();
+      const role = dialog.querySelector('#team-new-role').value;
+
+      if (name) {
+        addMember(name, email, role);
+        renderTeamPanel(container);
+        if (window.NotificationsModule) {
+          window.NotificationsModule.success('Membro adicionado!');
+        }
+      }
+      dialog.remove();
+    });
+  }
+
+  // ============================================================
+  // API PÚBLICA
+  // ============================================================
+
+  window.TeamSystem = {
+    init,
+    setCurrentUser,
+    getCurrentUser: () => state.currentUser,
+    getMembers: () => [...state.members],
+    addMember,
+    removeMember,
+    updateMemberStatus,
+    updateMemberRole,
+    assignChat,
+    unassignChat,
+    getAssignedUser,
+    getUserChats,
+    transferChat,
+    addNote,
+    getNotes,
+    deleteNote,
+    getTeamStats,
+    getMemberStats,
+    renderTeamPanel,
+    ROLES,
+    STATUSES
+  };
+
+  // Auto-inicializar
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => setTimeout(init, 500));
+  } else {
+    setTimeout(init, 500);
+  }
+
+})();
