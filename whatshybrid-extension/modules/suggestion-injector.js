@@ -114,6 +114,8 @@
     PANEL_ID: 'whl-suggestions-panel',
     MAX_SUGGESTIONS: 1, // Show only ONE best suggestion
     MAX_CONTEXT_MESSAGES: 10, // Maximum number of messages to extract from DOM for context
+    FOCUS_DELAY_MS: 100, // Delay to ensure input field focus is established
+    DOM_CLEANUP_DELAY_MS: 100, // Delay to allow browser to complete DOM reflow after clearing
     // v7.5.0: AUTO_HIDE_DELAY removed - no auto-hide behavior
     ANIMATION_DURATION: 300,
     // FAB positioning - positioned above WhatsApp input field to avoid overlapping send button
@@ -560,16 +562,16 @@
 
     // Foca no campo
     inputField.focus();
-    // Wait for focus to be established (100ms is sufficient for most browsers)
-    await new Promise(r => setTimeout(r, 100));
+    // Wait for focus to be established
+    await new Promise(r => setTimeout(r, CONFIG.FOCUS_DELAY_MS));
 
     if (!focusOnly && text) {
       // CORREÇÃO: Limpar campo COMPLETAMENTE
       inputField.textContent = '';
       inputField.innerHTML = '';
       
-      // Aguardar limpeza do DOM (100ms allows for browser reflow)
-      await new Promise(r => setTimeout(r, 100));
+      // Aguardar limpeza do DOM
+      await new Promise(r => setTimeout(r, CONFIG.DOM_CLEANUP_DELAY_MS));
       
       // Focar novamente após limpeza
       inputField.focus();
@@ -747,12 +749,21 @@
           ? domMessages.map(m => `${m.role === 'user' ? 'Cliente' : 'Você'}: ${m.content}`).join('\n')
           : 'Nova conversa - cliente acabou de enviar primeira mensagem.';
         
+        // Find last user message more efficiently
+        let lastUserMessage = 'Mensagem não detectada';
+        for (let i = domMessages.length - 1; i >= 0; i--) {
+          if (domMessages[i].role === 'user') {
+            lastUserMessage = domMessages[i].content;
+            break;
+          }
+        }
+        
         const prompt = `Baseado na conversa abaixo, gere UMA sugestão de resposta profissional e contextualizada.
 
 CONVERSA:
 ${contextText}
 
-ÚLTIMA MENSAGEM DO CLIENTE: ${domMessages.filter(m => m.role === 'user').pop()?.content || 'Mensagem não detectada'}
+ÚLTIMA MENSAGEM DO CLIENTE: ${lastUserMessage}
 
 INSTRUÇÕES:
 - Responda de forma profissional e útil
@@ -794,7 +805,7 @@ Responda APENAS com o texto da sugestão, sem formatação adicional.`;
       
       // PRIORIDADE 2: Tentar Store do WhatsApp
       if (window.Store?.Msg?.getModelsArray) {
-        const msgs = window.Store.Msg.getModelsArray().slice(-10);
+        const msgs = window.Store.Msg.getModelsArray().slice(-CONFIG.MAX_CONTEXT_MESSAGES);
         if (msgs.length > 0) {
           return msgs.map(m => `${m.fromMe ? 'Você' : 'Cliente'}: ${m.body || ''}`).join('\n');
         }
