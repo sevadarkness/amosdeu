@@ -79,6 +79,7 @@
         "modules/smartbot-extended.js",
         "modules/smartbot-ai-plus.js",
         "modules/smartbot-autopilot.js",
+        "modules/escalation-system.js",
         "modules/human-typing.js",
         "modules/recover-advanced.js",
         "modules/smartbot-autopilot-v2.js",
