@@ -125,28 +125,32 @@
   
   // Test 14: Create campaign
   async function testCreateCampaign() {
+    const testName = 'Should create campaign';
     try {
       const campaign = await window.CampaignManager.createCampaign('Test Campaign', {
         template: 'Hello {nome}',
         delay: { min: 30000, max: 60000 }
       });
-      assertNotNull(campaign, 'Should create campaign');
-      assertEquals(campaign.status, 'draft', 'New campaign should have draft status');
-      assertEquals(campaign.name, 'Test Campaign', 'Campaign should have correct name');
-      assertTrue(campaign.id.startsWith('camp_'), 'Campaign should have valid ID');
+      assertNotNull(campaign, testName + ' - campaign object');
+      assertEquals(campaign.status, 'draft', testName + ' - status should be draft');
+      assertEquals(campaign.name, 'Test Campaign', testName + ' - name should match');
+      assertTrue(campaign.id.startsWith('camp_'), testName + ' - should have valid ID');
     } catch (error) {
       console.error('Error in testCreateCampaign:', error);
+      tests.push({ testName, success: false, actual: error.message, expected: 'no error' });
       failed++;
     }
   }
   
   // Test 15: List campaigns
   async function testListCampaigns() {
+    const testName = 'Should list campaigns';
     try {
       const campaigns = await window.CampaignManager.listCampaigns();
-      assertTrue(Array.isArray(campaigns), 'Should return array of campaigns');
+      assertTrue(Array.isArray(campaigns), testName + ' - should return array');
     } catch (error) {
       console.error('Error in testListCampaigns:', error);
+      tests.push({ testName, success: false, actual: error.message, expected: 'no error' });
       failed++;
     }
   }

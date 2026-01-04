@@ -322,19 +322,14 @@
       
       let normalized = phone.toString().replace(/\D/g, '');
       
-      // 55 + 11 dígitos (com 9)
+      // 55 + 11 dígitos (com 9) = 13 dígitos total
       if (normalized.length === 13 && normalized.startsWith('55')) {
         return normalized;
       }
       
-      // 11 dígitos (com 9) ou 10 dígitos
+      // 11 dígitos (com 9) ou 10 dígitos - adicionar código do país
       if (normalized.length === 11 || normalized.length === 10) {
         return '55' + normalized;
-      }
-      
-      // 11 dígitos começando com 55
-      if (normalized.length === 11 && normalized.startsWith('55')) {
-        return normalized;
       }
       
       return null;
@@ -542,10 +537,20 @@
      */
     async openChat(phone) {
       try {
-        const link = `https://web.whatsapp.com/send?phone=${phone}`;
-        window.location.href = link;
+        // Tentar usar o roteador interno do WhatsApp Web primeiro
+        // Se não funcionar, usar o método tradicional
+        const waLink = `https://web.whatsapp.com/send?phone=${phone}`;
         
-        // Aguardar carregamento
+        // Método 1: Tentar abrir via interno (se disponível)
+        if (window.WWebJS && typeof window.WWebJS.openChat === 'function') {
+          await window.WWebJS.openChat(phone);
+        } else {
+          // Método 2: Navegação padrão
+          // Nota: Isso causa um reload da página, mas é necessário para abrir novos chats
+          window.location.href = waLink;
+        }
+        
+        // Aguardar carregamento do chat
         await this.sleep(5000);
         
         // Verificar se chat abriu
