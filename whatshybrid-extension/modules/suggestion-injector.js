@@ -264,12 +264,7 @@
     MAX_CONTEXT_MESSAGES: 10, // Maximum number of messages to extract from DOM for context
     FOCUS_DELAY_MS: 100, // Delay to ensure input field focus is established
     DOM_CLEANUP_DELAY_MS: 100, // Delay to allow browser to complete DOM reflow after clearing
-    // v7.5.0: AUTO_HIDE_DELAY removed - no auto-hide behavior
-    ANIMATION_DURATION: 300,
-    // FAB positioning - positioned above WhatsApp input field to avoid overlapping send button
-    // WhatsApp's input field is approximately 50px height, send button is ~60px from right edge
-    FAB_BOTTOM: '60px',  // 10px clearance above input field
-    FAB_RIGHT: '80px'    // 20px clearance from send button
+    ANIMATION_DURATION: 300
   };
 
   const state = {
@@ -508,41 +503,6 @@
         transform: translateX(-50%) translateY(0);
         opacity: 1;
       }
-
-      /* Botão flutuante - 🤖 Robot Button v7.7.0 */
-      #whl-suggestion-fab {
-        position: fixed;  /* CORREÇÃO: fixed em vez de absolute */
-        bottom: 70px;     /* Acima do campo de digitação, não sobrepõe botão enviar */
-        right: 90px;      /* Mais à esquerda para não sobrepor enviar */
-        width: 48px;      /* CORREÇÃO: Aumentado de 40px para 48px (melhor toque) */
-        height: 48px;
-        border-radius: 50%;
-        background: linear-gradient(135deg, #8B5CF6, #3B82F6);
-        border: none;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 24px;  /* CORREÇÃO: Aumentado de 20px para 24px */
-        box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
-        z-index: 999;     /* CORREÇÃO: Reduzido de 1000 para 999 */
-        transition: all 0.3s ease;  /* CORREÇÃO: Transição mais suave */
-      }
-
-      #whl-suggestion-fab:hover {
-        transform: scale(1.1);
-        box-shadow: 0 6px 16px rgba(139, 92, 246, 0.6);
-      }
-
-      /* NOVO: Estado ativo (quando painel está aberto) */
-      #whl-suggestion-fab.active {
-        background: linear-gradient(135deg, #10B981, #059669);  /* Verde quando aberto */
-        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
-      }
-
-      #whl-suggestion-fab.active:hover {
-        box-shadow: 0 6px 16px rgba(16, 185, 129, 0.6);
-      }
     `;
     document.head.appendChild(styles);
   }
@@ -574,31 +534,10 @@
 
     document.body.appendChild(panel);
 
-    // Botão flutuante 🤖 v7.5.0 - Positioned above input field
-    const fab = document.createElement('button');
-    fab.id = 'whl-suggestion-fab';
-    fab.innerHTML = '🤖';
-    fab.title = 'Abrir/Fechar Sugestões de IA (Toggle)';
-    
-    // Find the footer to attach the button relative to it
-    const footer = document.querySelector('#main footer') || document.querySelector('footer');
-    if (footer) {
-      // Only set position if it's currently static (defensive approach)
-      const currentPosition = window.getComputedStyle(footer).position;
-      if (currentPosition === 'static') {
-        footer.style.position = 'relative';
-      }
-      footer.appendChild(fab);
-    } else {
-      // Fallback: append to body with fixed positioning
-      document.body.appendChild(fab);
-    }
-
-    // Event listeners - v7.5.0: Toggle behavior, no auto-close
+    // Event listeners
     document.getElementById('whl-sug-close').addEventListener('click', hidePanel);
-    fab.addEventListener('click', togglePanel);
 
-    console.log('[SuggestionInjector] 💡 Painel criado com botão 🤖');
+    console.log('[SuggestionInjector] 💡 Painel de sugestões criado');
   }
 
   // ============================================================
@@ -784,35 +723,27 @@
 
   function showPanel() {
     const panel = document.getElementById(CONFIG.PANEL_ID);
-    
+
     if (panel) {
       panel.classList.add('visible');
       state.isVisible = true;
     }
-    // v7.5.0: FAB always visible, doesn't hide
   }
 
   function hidePanel() {
     const panel = document.getElementById(CONFIG.PANEL_ID);
-    
+
     if (panel) {
       panel.classList.remove('visible');
       state.isVisible = false;
     }
-    // v7.5.0: FAB always visible
   }
 
   function togglePanel() {
-    const fab = document.getElementById('whl-suggestion-fab');
-
     if (state.isVisible) {
       hidePanel();
-      // NOVO: Remover estado visual ativo
-      if (fab) fab.classList.remove('active');
     } else {
       showPanel();
-      // NOVO: Adicionar estado visual ativo
-      if (fab) fab.classList.add('active');
       // Generate suggestion immediately when opening
       requestSuggestionGeneration();
     }
