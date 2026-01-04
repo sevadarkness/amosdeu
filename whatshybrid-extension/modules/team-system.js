@@ -10,8 +10,12 @@
  * - Transferência de atendimento
  * - Estatísticas por membro
  * - Notas internas
+ * - ✅ Disparo de mensagens via WhatsApp API (Store.Cmd, Store.Chat)
+ * - ✅ Broadcast para múltiplos membros
+ * - ✅ Integração com HumanTyping para digitação natural
+ * - ✅ Múltiplos fallbacks de envio
  *
- * @version 1.0.0
+ * @version 1.1.0
  */
 
 (function() {
@@ -370,6 +374,284 @@
   }
 
   // ============================================================
+  // DISPARO DE MENSAGENS (WhatsApp API Integration)
+  // ============================================================
+
+  function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Abre chat usando API interna do WhatsApp
+   * Métodos baseados em smartbot-autopilot-v2.js e crm.js
+   */
+  async function openChatByPhone(phone) {
+    const cleanPhone = phone.replace(/\D/g, '');
+
+    // Método 1: Via Store.Cmd.openChatAt (mais confiável)
+    if (window.Store?.Cmd?.openChatAt) {
+      try {
+        await window.Store.Cmd.openChatAt(cleanPhone + '@c.us');
+        console.log('[TeamSystem] ✅ Chat aberto via Store.Cmd.openChatAt');
+        await sleep(1500);
+        return true;
+      } catch (e) {
+        console.warn('[TeamSystem] Store.Cmd.openChatAt falhou:', e.message);
+      }
+    }
+
+    // Método 2: Via Store.Chat.find
+    if (window.Store?.Chat?.find) {
+      try {
+        const chat = await window.Store.Chat.find(cleanPhone + '@c.us');
+        if (chat) {
+          if (chat.open) {
+            await chat.open();
+          } else if (window.Store?.Cmd?.openChatFromContact) {
+            await window.Store.Cmd.openChatFromContact(chat);
+          }
+          console.log('[TeamSystem] ✅ Chat aberto via Store.Chat.find');
+          await sleep(1500);
+          return true;
+        }
+      } catch (e) {
+        console.warn('[TeamSystem] Store.Chat.find falhou:', e.message);
+      }
+    }
+
+    // Método 3: Via URL (fallback)
+    try {
+      const link = document.createElement('a');
+      link.href = `https://web.whatsapp.com/send?phone=${cleanPhone}`;
+      link.click();
+      console.log('[TeamSystem] ⚠️ Chat aberto via URL fallback');
+      await sleep(3000);
+      return true;
+    } catch (e) {
+      console.error('[TeamSystem] Todos os métodos de abertura falharam:', e);
+    }
+
+    return false;
+  }
+
+  /**
+   * Envia mensagem no chat atual usando HumanTyping
+   * Método baseado em smartbot-autopilot-v2.js
+   */
+  async function sendMessageToChat(text) {
+    // Encontrar campo de input
+    const inputSelectors = [
+      'footer div[contenteditable="true"][role="textbox"]',
+      '[data-testid="conversation-compose-box-input"]',
+      'div[contenteditable="true"][role="textbox"]'
+    ];
+
+    let inputField = null;
+    for (const sel of inputSelectors) {
+      inputField = document.querySelector(sel);
+      if (inputField) {
+        console.log('[TeamSystem] Campo de input encontrado:', sel);
+        break;
+      }
+    }
+
+    if (!inputField) {
+      console.error('[TeamSystem] ❌ Campo de input não encontrado');
+      return false;
+    }
+
+    // Focar no campo
+    inputField.focus();
+    await sleep(200);
+
+    // Limpar campo
+    inputField.textContent = '';
+    inputField.innerHTML = '';
+
+    // Usar HumanTyping se disponível
+    if (window.HumanTyping?.type) {
+      try {
+        await window.HumanTyping.type(inputField, text, {
+          minDelay: 30,
+          maxDelay: 80
+        });
+        console.log('[TeamSystem] ✅ Texto digitado com HumanTyping');
+      } catch (e) {
+        console.warn('[TeamSystem] HumanTyping falhou, usando fallback');
+        // Fallback: inserção direta
+        for (const char of text) {
+          document.execCommand('insertText', false, char);
+          inputField.dispatchEvent(new Event('input', { bubbles: true }));
+          await sleep(Math.random() * 40 + 20);
+        }
+      }
+    } else {
+      // Fallback: digitação manual
+      console.log('[TeamSystem] HumanTyping não disponível, usando digitação manual');
+      for (const char of text) {
+        document.execCommand('insertText', false, char);
+        inputField.dispatchEvent(new Event('input', { bubbles: true }));
+        await sleep(Math.random() * 40 + 20);
+      }
+    }
+
+    await sleep(300);
+
+    // Clicar no botão enviar
+    const sendBtn = document.querySelector('[data-testid="send"]') ||
+                    document.querySelector('button[aria-label*="Enviar"]') ||
+                    document.querySelector('span[data-icon="send"]')?.parentElement;
+
+    if (sendBtn) {
+      sendBtn.click();
+      console.log('[TeamSystem] ✅ Mensagem enviada via botão');
+      await sleep(500);
+      return true;
+    }
+
+    // Fallback: pressionar Enter
+    inputField.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter',
+      keyCode: 13,
+      bubbles: true
+    }));
+    console.log('[TeamSystem] ✅ Mensagem enviada via Enter');
+    await sleep(500);
+    return true;
+  }
+
+  /**
+   * Envia mensagem para um telefone específico
+   * (abre chat + envia mensagem)
+   */
+  async function sendToPhone(phone, message) {
+    try {
+      const opened = await openChatByPhone(phone);
+      if (!opened) {
+        throw new Error('Não foi possível abrir o chat');
+      }
+
+      const sent = await sendMessageToChat(message);
+      if (!sent) {
+        throw new Error('Não foi possível enviar a mensagem');
+      }
+
+      return { success: true, phone, message };
+    } catch (error) {
+      console.error('[TeamSystem] Erro ao enviar para', phone, ':', error);
+      return { success: false, phone, error: error.message };
+    }
+  }
+
+  /**
+   * Broadcast: envia mensagem para múltiplos membros da equipe
+   * @param {Array<string>} memberIds - IDs dos membros que receberão a mensagem
+   * @param {string} message - Mensagem a ser enviada
+   * @param {Object} options - Opções de envio
+   * @returns {Object} Resultado do broadcast
+   */
+  async function broadcastToTeam(memberIds, message, options = {}) {
+    const {
+      delayMin = 3000,
+      delayMax = 7000,
+      includeSignature = true,
+      senderName = state.currentUser?.name || 'Equipe'
+    } = options;
+
+    const results = {
+      total: memberIds.length,
+      success: 0,
+      failed: 0,
+      details: []
+    };
+
+    // Validar membros
+    const members = memberIds.map(id => state.members.find(m => m.id === id)).filter(Boolean);
+
+    if (members.length === 0) {
+      console.warn('[TeamSystem] Nenhum membro válido para broadcast');
+      return results;
+    }
+
+    // Formatar mensagem com assinatura
+    const fullMessage = includeSignature
+      ? `*${senderName}:* ${message}`
+      : message;
+
+    console.log(`[TeamSystem] 📢 Iniciando broadcast para ${members.length} membros...`);
+
+    for (let i = 0; i < members.length; i++) {
+      const member = members[i];
+
+      // Pular se o membro não tiver telefone/email configurado
+      // (assumindo que email pode conter telefone ou ID do WhatsApp)
+      if (!member.email || !member.email.match(/\d+/)) {
+        console.warn('[TeamSystem] Membro sem telefone:', member.name);
+        results.failed++;
+        results.details.push({
+          member: member.name,
+          status: 'failed',
+          error: 'Telefone não configurado'
+        });
+        continue;
+      }
+
+      try {
+        // Extrair telefone do email (se for número)
+        const phone = member.email.replace(/\D/g, '');
+
+        console.log(`[TeamSystem] [${i + 1}/${members.length}] Enviando para ${member.name}...`);
+
+        const result = await sendToPhone(phone, fullMessage);
+
+        if (result.success) {
+          results.success++;
+          results.details.push({
+            member: member.name,
+            status: 'success'
+          });
+
+          // Atualizar estatísticas do membro
+          if (!member.stats) {
+            member.stats = { chatsHandled: 0, messagesSent: 0, avgResponseTime: 0, satisfaction: 0 };
+          }
+          member.stats.messagesSent++;
+        } else {
+          throw new Error(result.error);
+        }
+
+        // Delay entre envios (exceto no último)
+        if (i < members.length - 1) {
+          const delay = Math.random() * (delayMax - delayMin) + delayMin;
+          console.log(`[TeamSystem] Aguardando ${Math.round(delay / 1000)}s antes do próximo envio...`);
+          await sleep(delay);
+        }
+
+      } catch (error) {
+        results.failed++;
+        results.details.push({
+          member: member.name,
+          status: 'failed',
+          error: error.message
+        });
+        console.error('[TeamSystem] Erro ao enviar para', member.name, ':', error);
+      }
+    }
+
+    // Salvar estatísticas atualizadas
+    await saveState();
+
+    console.log('[TeamSystem] 📢 Broadcast concluído:', results);
+
+    // Emitir evento
+    if (window.EventBus) {
+      window.EventBus.emit('teamsystem:broadcast_completed', results);
+    }
+
+    return results;
+  }
+
+  // ============================================================
   // ESTATÍSTICAS
   // ============================================================
 
@@ -605,7 +887,10 @@
   // ============================================================
 
   window.TeamSystem = {
+    // Inicialização
     init,
+
+    // Gerenciamento de usuários
     setCurrentUser,
     getCurrentUser: () => state.currentUser,
     getMembers: () => [...state.members],
@@ -613,17 +898,33 @@
     removeMember,
     updateMemberStatus,
     updateMemberRole,
+
+    // Atribuição de conversas
     assignChat,
     unassignChat,
     getAssignedUser,
     getUserChats,
     transferChat,
+
+    // Notas internas
     addNote,
     getNotes,
     deleteNote,
+
+    // Disparo de mensagens (NEW!)
+    openChatByPhone,
+    sendMessageToChat,
+    sendToPhone,
+    broadcastToTeam,
+
+    // Estatísticas
     getTeamStats,
     getMemberStats,
+
+    // UI
     renderTeamPanel,
+
+    // Constantes
     ROLES,
     STATUSES
   };
