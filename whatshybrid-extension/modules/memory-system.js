@@ -435,6 +435,67 @@ Retorne APENAS o JSON, sem explicações adicionais.`;
     }
 
     /**
+     * Obtém contexto híbrido (local + servidor)
+     * Baseado em CERTO-WHATSAPPLITE-main-21/05chromeextensionwhatsapp/content/content.js getHybridContext()
+     * 
+     * @param {string} chatTitle - Título do chat
+     * @param {string} transcript - Transcrição
+     * @returns {Object} - { memory, examples, context, source }
+     */
+    async getHybridContext(chatTitle, transcript = '') {
+      const localMemory = await this.getMemory(chatTitle);
+      
+      let localExamples = [];
+      if (window.fewShotLearning) {
+        localExamples = window.fewShotLearning.getAll();
+      }
+      
+      // Tenta buscar do servidor se configurado
+      try {
+        const settings = await this.getSettings();
+        
+        if (settings?.memorySyncEnabled && settings?.memoryServerUrl) {
+          const response = await chrome.runtime.sendMessage({
+            action: 'MEMORY_QUERY',
+            payload: { 
+              chatTitle, 
+              transcript, 
+              topK: 4 
+            }
+          });
+          
+          if (response?.ok && response?.data) {
+            return {
+              memory: response.data.memory || localMemory,
+              examples: Array.isArray(response.data.examples) ? response.data.examples : localExamples,
+              context: response.data.context || null,
+              source: 'server'
+            };
+          }
+        }
+      } catch (error) {
+        console.warn('[MemorySystem] Fallback para memória local:', error.message);
+      }
+      
+      return {
+        memory: localMemory,
+        examples: localExamples,
+        context: null,
+        source: 'local'
+      };
+    }
+
+    async getSettings() {
+      try {
+        const data = await chrome.storage.local.get('whl_settings');
+        return data.whl_settings || {};
+      } catch (e) {
+        console.warn('[MemorySystem] Erro ao carregar settings:', e.message);
+        return {};
+      }
+    }
+
+    /**
      * Limpa todas as memórias
      */
     async clearAll() {

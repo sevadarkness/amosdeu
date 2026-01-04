@@ -122,10 +122,18 @@
 
     /**
      * Obtém todos os exemplos
-     * @returns {Array} - Lista de exemplos
+     * @returns {Array} - Lista de exemplos (cópia)
      */
     getExamples() {
-      return this.examples;
+      return [...this.examples];
+    }
+
+    /**
+     * Alias para getExamples (compatibilidade)
+     * @returns {Array} - Lista de exemplos (cópia)
+     */
+    getAll() {
+      return [...this.examples];
     }
 
     /**
@@ -135,6 +143,49 @@
      */
     getExamplesByCategory(category) {
       return this.examples.filter(ex => ex.category === category);
+    }
+
+    /**
+     * Seleciona exemplos mais relevantes baseado em keyword overlap
+     * Baseado em CERTO-WHATSAPPLITE-main-21/05chromeextensionwhatsapp/content/content.js pickExamples()
+     * 
+     * @param {string} transcript - Transcrição atual
+     * @param {number} max - Máximo de exemplos
+     * @returns {Array} - Exemplos ordenados por relevância
+     */
+    pickRelevantExamples(transcript, max = 3) {
+      const examples = this.getAll();
+      
+      if (!examples.length || !transcript) {
+        return examples.slice(0, max);
+      }
+      
+      const transcriptLower = transcript.toLowerCase();
+      const transcriptWords = new Set(
+        transcriptLower.split(/\W+/).filter(w => w.length >= 4)
+      );
+      
+      // Calcula score de cada exemplo baseado em overlap de keywords
+      const scored = examples.map(ex => {
+        const userText = (ex.user || ex.input || '').toLowerCase();
+        const userWords = userText.split(/\W+/).filter(w => w.length >= 4);
+        
+        let score = 0;
+        for (const word of userWords.slice(0, 18)) {
+          if (transcriptWords.has(word)) {
+            score += 1;
+          }
+        }
+        
+        return { example: ex, score };
+      });
+      
+      // Ordena por score e retorna top N
+      return scored
+        .sort((a, b) => b.score - a.score)
+        .filter(s => s.score > 0)
+        .slice(0, max)
+        .map(s => s.example);
     }
 
     /**

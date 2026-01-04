@@ -85,6 +85,7 @@
       this.copilotEnabled = false;
       this.threshold = 70; // Threshold padrão para copilot mode
       this.initialized = false;
+      this.eventLog = []; // Histórico de eventos
     }
 
     /**
@@ -137,32 +138,44 @@
     }
 
     /**
-     * Calcula score de confiança baseado em métricas
+     * Calcula score de confiança baseado em métricas PONDERADAS
+     * Baseado em CERTO-WHATSAPPLITE-main-21/01_backend_painel_php/api/ai_confidence.php
+     * 
+     * Componentes:
+     * - Feedback Score: max 40 pontos (ratio good/total)
+     * - Knowledge Score: max 20 pontos (weighted FAQs, products, examples)
+     * - Usage Score: max 25 pontos (ratio used/total)
+     * - Auto-Send Score: max 15 pontos (capped)
+     * 
      * @returns {number} - Score (0-100)
      */
     calculateScore() {
-      let points = 0;
+      // 1. Feedback Score (max 40 pontos)
+      const totalFeedback = this.metrics.feedbackGood + this.metrics.feedbackBad;
+      let feedbackScore = 0;
+      if (totalFeedback > 0) {
+        feedbackScore = (this.metrics.feedbackGood / totalFeedback) * 40;
+      }
 
-      // Pontos por feedback
-      points += this.metrics.feedbackGood * POINTS_CONFIG.feedback_good;
-      points += this.metrics.feedbackBad * POINTS_CONFIG.feedback_bad;
-      points += this.metrics.feedbackCorrections * POINTS_CONFIG.feedback_correction;
+      // 2. Knowledge Base Score (max 20 pontos)
+      const knowledgeScore = Math.min(20,
+        (this.metrics.faqsAdded * 0.5) +
+        (this.metrics.productsAdded * 0.3) +
+        (this.metrics.examplesAdded * 1.0)
+      );
 
-      // Pontos por uso de sugestões
-      points += this.metrics.suggestionsUsed * POINTS_CONFIG.suggestion_used;
-      points += this.metrics.suggestionsEdited * POINTS_CONFIG.suggestion_edited;
+      // 3. Usage Score (max 25 pontos)
+      const totalSuggestions = this.metrics.suggestionsUsed + this.metrics.suggestionsEdited;
+      let usageScore = 0;
+      if (totalSuggestions > 0) {
+        usageScore = (this.metrics.suggestionsUsed / totalSuggestions) * 25;
+      }
 
-      // Pontos por envios automáticos
-      points += this.metrics.autoSent * POINTS_CONFIG.auto_sent;
+      // 4. Auto-Send Score (max 15 pontos)
+      const autoScore = Math.min(15, this.metrics.autoSent * 0.5);
 
-      // Pontos por conhecimento adicionado
-      points += this.metrics.faqsAdded * POINTS_CONFIG.faq_added;
-      points += this.metrics.productsAdded * POINTS_CONFIG.product_added;
-      points += this.metrics.examplesAdded * POINTS_CONFIG.example_added;
-
-      // Normaliza para 0-100
-      // Assume que 100 pontos = 100% de confiança
-      this.score = Math.max(0, Math.min(100, points));
+      // Total (max 100)
+      this.score = Math.min(100, Math.round(feedbackScore + knowledgeScore + usageScore + autoScore));
 
       // Atualiza nível
       this.updateLevel();
@@ -380,6 +393,265 @@
           threshold: this.threshold,
           score: this.score
         });
+      }
+    }
+
+    /**
+     * Verifica se pode enviar automaticamente baseado em análise da mensagem
+     * Baseado em CERTO-WHATSAPPLITE-main-21/05chromeextensionwhatsapp/content/content.js
+     * 
+     * @param {string} message - Mensagem recebida
+     * @param {Object} knowledge - Base de conhecimento
+     * @returns {Object} - { canSend, reason, confidence, answer }
+     */
+    async canAutoSendSmart(message, knowledge = null) {
+      try {
+        // Verifica se copilot está ativado e score atinge threshold
+        if (!this.copilotEnabled) {
+          return { canSend: false, reason: 'copilot_disabled' };
+        }
+
+        if (this.score < this.threshold) {
+          return { canSend: false, reason: 'below_threshold', score: this.score, threshold: this.threshold };
+        }
+
+        // Carrega knowledge se não fornecido
+        if (!knowledge && window.knowledgeBase) {
+          knowledge = await window.knowledgeBase.getKnowledge();
+        }
+
+        if (!knowledge) {
+          return { canSend: false, reason: 'no_knowledge_base' };
+        }
+
+        // 1. Simple greetings (confiança 95%)
+        if (this.isSimpleGreeting(message)) {
+          return { 
+            canSend: true, 
+            reason: 'greeting', 
+            confidence: 95,
+            answer: null // Será gerado pela IA
+          };
+        }
+
+        // 2. FAQ match (confiança > 80%)
+        const faqMatch = this.findFAQMatch(message, knowledge.faq || []);
+        if (faqMatch && faqMatch.confidence > 80) {
+          return { 
+            canSend: true, 
+            reason: 'faq_match', 
+            confidence: faqMatch.confidence, 
+            answer: faqMatch.answer 
+          };
+        }
+
+        // 3. Canned reply match (confiança 90%)
+        const cannedMatch = this.checkCannedReply(message, knowledge.cannedReplies || []);
+        if (cannedMatch) {
+          return { 
+            canSend: true, 
+            reason: 'canned_reply', 
+            confidence: 90, 
+            answer: cannedMatch 
+          };
+        }
+
+        // 4. Product match (confiança > 75%)
+        const productMatch = this.findProductMatch(message, knowledge.products || []);
+        if (productMatch && productMatch.confidence > 75) {
+          return { 
+            canSend: true, 
+            reason: 'product_match', 
+            confidence: productMatch.confidence,
+            product: productMatch.product,
+            answer: null // Será gerado pela IA com contexto do produto
+          };
+        }
+
+        // 5. Conversa complexa - modo assistido
+        return { canSend: false, reason: 'complex_conversation' };
+
+      } catch (error) {
+        console.error('[ConfidenceSystem] Erro em canAutoSendSmart:', error);
+        return { canSend: false, reason: 'error', error: error.message };
+      }
+    }
+
+    /**
+     * Detecta saudações simples
+     * 
+     * NOTE: Esta implementação é intencionalmente duplicada em text-monitor.js
+     * para manter a independência dos módulos. Cada módulo tem suas próprias
+     * necessidades e contextos de uso.
+     * 
+     * @param {string} message - Mensagem
+     * @returns {boolean}
+     */
+    isSimpleGreeting(message) {
+      const greetings = [
+        'oi', 'olá', 'ola', 'oie', 'oii', 'oiii',
+        'bom dia', 'boa tarde', 'boa noite',
+        'eae', 'eai', 'fala', 'salve',
+        'hey', 'hi', 'hello',
+        'opa', 'opaa', 'e aí', 'e ai',
+        'blz', 'beleza', 'td bem', 'tudo bem'
+      ];
+      
+      const normalized = (message || '').toLowerCase().trim();
+      
+      // Match exato ou começa com saudação + separador
+      return greetings.some(g => {
+        if (normalized === g) return true;
+        if (normalized.startsWith(g)) {
+          const nextChar = normalized.charAt(g.length);
+          return /[\s,!?.]/.test(nextChar);
+        }
+        return false;
+      });
+    }
+
+    /**
+     * Busca match com FAQs usando similaridade de palavras
+     * @param {string} message - Mensagem
+     * @param {Array} faqs - Lista de FAQs
+     * @returns {Object|null} - { answer, confidence }
+     */
+    findFAQMatch(message, faqs) {
+      if (!Array.isArray(faqs) || faqs.length === 0) return null;
+      
+      const normalized = (message || '').toLowerCase().trim();
+      const words = normalized.split(/\s+/).filter(w => w.length > 2);
+      
+      if (words.length === 0) return null;
+      
+      let bestMatch = null;
+      let bestConfidence = 0;
+      
+      for (const faq of faqs) {
+        if (!faq.question || !faq.answer) continue;
+        
+        const questionWords = faq.question.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+        
+        if (questionWords.length === 0) continue;
+        
+        // Conta palavras que fazem match
+        const matches = questionWords.filter(qw => 
+          words.some(w => w.includes(qw) || qw.includes(w))
+        );
+        
+        const confidence = Math.round((matches.length / questionWords.length) * 100);
+        
+        if (confidence > bestConfidence) {
+          bestConfidence = confidence;
+          bestMatch = {
+            question: faq.question,
+            answer: faq.answer,
+            confidence
+          };
+        }
+      }
+      
+      return bestMatch;
+    }
+
+    /**
+     * Verifica match com respostas rápidas (canned replies)
+     * 
+     * NOTE: Esta implementação é intencionalmente duplicada em knowledge-base.js
+     * para manter a independência dos módulos. ConfidenceSystem precisa desta
+     * funcionalidade para suas próprias análises sem depender de KnowledgeBase.
+     * 
+     * @param {string} message - Mensagem
+     * @param {Array} cannedReplies - Lista de respostas rápidas
+     * @returns {string|null} - Resposta ou null
+     */
+    checkCannedReply(message, cannedReplies) {
+      if (!Array.isArray(cannedReplies) || cannedReplies.length === 0) return null;
+      
+      const normalized = (message || '').toLowerCase().trim();
+      
+      for (const canned of cannedReplies) {
+        if (!canned.triggers || !canned.reply) continue;
+        
+        const triggers = Array.isArray(canned.triggers) ? canned.triggers : [canned.triggers];
+        
+        for (const trigger of triggers) {
+          const triggerLower = (trigger || '').toLowerCase();
+          if (triggerLower && (normalized === triggerLower || normalized.includes(triggerLower))) {
+            return canned.reply;
+          }
+        }
+      }
+      
+      return null;
+    }
+
+    /**
+     * Busca match com produtos
+     * @param {string} message - Mensagem
+     * @param {Array} products - Lista de produtos
+     * @returns {Object|null} - { product, confidence }
+     */
+    findProductMatch(message, products) {
+      if (!Array.isArray(products) || products.length === 0) return null;
+      
+      const normalized = (message || '').toLowerCase().trim();
+      const words = normalized.split(/\s+/).filter(w => w.length > 2);
+      
+      if (words.length === 0) return null;
+      
+      let bestMatch = null;
+      let bestConfidence = 0;
+      
+      for (const product of products) {
+        if (!product.name) continue;
+        
+        const productName = product.name.toLowerCase();
+        const productWords = productName.split(/\s+/).filter(w => w.length > 2);
+        
+        // Verifica se nome do produto está na mensagem
+        if (normalized.includes(productName)) {
+          return { product, confidence: 95 };
+        }
+        
+        // Conta palavras que fazem match
+        const matches = productWords.filter(pw => 
+          words.some(w => w.includes(pw) || pw.includes(w))
+        );
+        
+        if (productWords.length > 0) {
+          const confidence = Math.round((matches.length / productWords.length) * 100);
+          
+          if (confidence > bestConfidence) {
+            bestConfidence = confidence;
+            bestMatch = { product, confidence };
+          }
+        }
+      }
+      
+      return bestMatch;
+    }
+
+    /**
+     * Adiciona histórico de eventos de confiança
+     */
+    logEvent(action, points, metadata = {}) {
+      if (!this.eventLog) {
+        this.eventLog = [];
+      }
+      
+      this.eventLog.push({
+        action,
+        points,
+        metadata,
+        score: this.score,
+        level: this.level,
+        timestamp: Date.now()
+      });
+      
+      // Mantém últimos 500 eventos
+      if (this.eventLog.length > 500) {
+        this.eventLog = this.eventLog.slice(-500);
       }
     }
 
