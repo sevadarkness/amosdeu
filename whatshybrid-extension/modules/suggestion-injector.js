@@ -110,16 +110,15 @@
   }
 
 
-  'use strict';
-
   const CONFIG = {
     PANEL_ID: 'whl-suggestions-panel',
     MAX_SUGGESTIONS: 1, // Show only ONE best suggestion
     // v7.5.0: AUTO_HIDE_DELAY removed - no auto-hide behavior
     ANIMATION_DURATION: 300,
-    // FAB positioning - positioned above WhatsApp input field
-    FAB_BOTTOM: '60px',  // Above input field (input field is ~50px)
-    FAB_RIGHT: '80px'    // Left of send button (send button is ~60px from right)
+    // FAB positioning - positioned above WhatsApp input field to avoid overlapping send button
+    // WhatsApp's input field is approximately 50px height, send button is ~60px from right edge
+    FAB_BOTTOM: '60px',  // 10px clearance above input field
+    FAB_RIGHT: '80px'    // 20px clearance from send button
   };
 
   const state = {
