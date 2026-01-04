@@ -616,6 +616,8 @@
                   Busque por contatos...
                 </div>
               </div>
+
+              <div class="status-msg" id="contactsStatus" style="display: none;"></div>
             </div>
 
             <!-- Training Section -->
@@ -643,6 +645,8 @@
                   Carregando estatísticas...
                 </div>
               </div>
+
+              <div class="status-msg" id="trainingStatus" style="display: none;"></div>
             </div>
           </div>
         </div>
@@ -845,6 +849,9 @@
         // Fallback: copiar para clipboard
         navigator.clipboard.writeText(output).then(() => {
           this.showStatus('chatStatus', '📋 Copiado! Cole no WhatsApp', 'success');
+        }).catch(err => {
+          this.showStatus('chatStatus', '❌ Erro ao copiar', 'error');
+          console.error('[UIPanel] Erro ao copiar no fallback:', err);
         });
       }
     }
@@ -959,15 +966,15 @@
     }
 
     handleImportContacts() {
-      this.showStatus('campaignStatus', '📥 Importar contatos - Em desenvolvimento', 'success');
+      this.showStatus('contactsStatus', '📥 Importar contatos - Em desenvolvimento', 'success');
     }
 
     handleExportContacts() {
-      this.showStatus('campaignStatus', '📤 Exportar contatos - Em desenvolvimento', 'success');
+      this.showStatus('contactsStatus', '📤 Exportar contatos - Em desenvolvimento', 'success');
     }
 
     handleSyncCRM() {
-      this.showStatus('campaignStatus', '🔄 Sincronizar CRM - Em desenvolvimento', 'success');
+      this.showStatus('contactsStatus', '🔄 Sincronizar CRM - Em desenvolvimento', 'success');
     }
 
     // ============================================
@@ -1031,11 +1038,11 @@
     }
 
     handleExportExamples() {
-      this.showStatus('chatStatus', '📤 Exportar exemplos - Em desenvolvimento', 'success');
+      this.showStatus('trainingStatus', '📤 Exportar exemplos - Em desenvolvimento', 'success');
     }
 
     handleImportExamples() {
-      this.showStatus('chatStatus', '📥 Importar exemplos - Em desenvolvimento', 'success');
+      this.showStatus('trainingStatus', '📥 Importar exemplos - Em desenvolvimento', 'success');
     }
 
     // ============================================
@@ -1056,6 +1063,10 @@
           chrome.storage.local.get(['uiPanelTheme'], result => {
             if (result.uiPanelTheme) {
               this.theme = result.uiPanelTheme;
+              // Apply theme to container immediately after loading
+              if (this.container) {
+                this.container.classList.toggle('dark', this.theme === 'dark');
+              }
               console.log('[UIPanel] Tema carregado:', this.theme);
             }
             resolve();
