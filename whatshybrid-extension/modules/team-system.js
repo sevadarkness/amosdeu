@@ -95,7 +95,7 @@
           joinedAt: Date.now(),
           stats: {
             chatsHandled: 0,
-            messagesСent: 0,
+            messagesSent: 0,
             avgResponseTime: 0,
             satisfaction: 0
           }
