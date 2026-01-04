@@ -69,6 +69,7 @@
         "modules/ai-backend-handlers.js",
         "modules/notifications.js",
         "modules/labels.js",
+        "modules/contact-manager.js",
         "modules/crm.js",
         "modules/tasks.js",
         "modules/campaign-manager.js",

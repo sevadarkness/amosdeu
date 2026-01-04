@@ -18,6 +18,7 @@
     { name: 'ChartEngine', global: 'ChartEngine', priority: 10 },
     { name: 'NotificationsModule', global: 'NotificationsModule', priority: 20 },
     { name: 'AnalyticsModule', global: 'AnalyticsModule', priority: 30 },
+    { name: 'ContactManager', global: 'ContactManager', priority: 35 },
     { name: 'CRMModule', global: 'CRMModule', priority: 40 },
     { name: 'TasksModule', global: 'TasksModule', priority: 50 },
     { name: 'CampaignManager', global: 'CampaignManager', priority: 55 },
