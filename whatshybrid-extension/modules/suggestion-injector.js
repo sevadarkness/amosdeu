@@ -576,32 +576,35 @@
       // Focar novamente após limpeza
       inputField.focus();
       
-      // MÉTODO 1: execCommand (deprecated but widely supported, with fallback)
-      // Note: execCommand is deprecated but still widely supported. Direct insertion is fallback.
-      let inserted = false;
+      // CORREÇÃO CRÍTICA: UMA ÚNICA forma de inserir texto
+      // Usar APENAS execCommand, sem fallback que duplica
       try {
-        inserted = document.execCommand('insertText', false, text);
-        console.log('[SuggestionInjector] execCommand result:', inserted);
+        const inserted = document.execCommand('insertText', false, text);
+        console.log('[SuggestionInjector] Texto inserido com execCommand:', inserted);
+
+        // CORREÇÃO: Verificar se REALMENTE inseriu antes de tentar fallback
+        // Aguardar um tick para o DOM atualizar
+        await new Promise(r => setTimeout(r, 50));
+
+        // Só usar fallback se o campo continuar vazio
+        if (!inputField.textContent || inputField.textContent.trim() === '') {
+          console.warn('[SuggestionInjector] execCommand falhou, usando fallback direto');
+          inputField.textContent = text;
+
+          // Disparar eventos apenas no fallback
+          inputField.dispatchEvent(new InputEvent('input', {
+            bubbles: true,
+            cancelable: true,
+            inputType: 'insertText',
+            data: text
+          }));
+        }
       } catch (e) {
-        console.warn('[SuggestionInjector] execCommand falhou:', e);
-      }
-      
-      // MÉTODO 2: Fallback - inserção direta (only if execCommand failed completely)
-      if (!inserted || !inputField.textContent || inputField.textContent.trim() === '') {
-        console.log('[SuggestionInjector] Usando fallback de inserção direta');
+        console.error('[SuggestionInjector] Erro ao inserir texto:', e);
+        // Fallback em caso de exception
         inputField.textContent = text;
+        inputField.dispatchEvent(new InputEvent('input', { bubbles: true }));
       }
-      
-      // Dispara eventos para WhatsApp detectar
-      inputField.dispatchEvent(new InputEvent('input', { 
-        bubbles: true, 
-        cancelable: true,
-        inputType: 'insertText',
-        data: text 
-      }));
-      
-      // Evento adicional para garantir
-      inputField.dispatchEvent(new Event('change', { bubbles: true }));
       
       // Move cursor para o final
       try {
@@ -656,54 +659,74 @@
     }
   }
 
-  // Extract messages from WhatsApp Web DOM
+  // Extract messages from WhatsApp Web DOM (ONLY from active chat)
   function extractMessagesFromDOM() {
     const messages = [];
     try {
-      // Seletores para mensagens do WhatsApp Web
+      // CORREÇÃO CRÍTICA: Verificar chat ativo antes de extrair
+      const currentChatId = getCurrentChatId();
+      if (!currentChatId) {
+        console.warn('[SuggestionInjector] Nenhum chat ativo - não é possível extrair mensagens');
+        return messages;
+      }
+
+      // CORREÇÃO CRÍTICA: Buscar apenas dentro do container do chat ativo
+      // O WhatsApp Web renderiza mensagens dentro do elemento [data-tab="1"] ou similar
+      const chatContainer = document.querySelector('[data-tab="1"]') ||
+                            document.querySelector('[role="application"]') ||
+                            document.querySelector('div[class*="conversation-panel"]');
+
+      if (!chatContainer) {
+        console.warn('[SuggestionInjector] Container de chat não encontrado');
+        return messages;
+      }
+
+      // Seletores para mensagens do WhatsApp Web (dentro do container ativo)
       const messageSelectors = [
         '[data-testid="msg-container"]',
         '.message-in, .message-out',
         '[data-id][class*="message"]'
       ];
-      
+
       let msgElements = null;
       for (const sel of messageSelectors) {
-        msgElements = document.querySelectorAll(sel);
+        // CORREÇÃO CRÍTICA: querySelectorAll APENAS dentro do chatContainer
+        msgElements = chatContainer.querySelectorAll(sel);
         if (msgElements && msgElements.length > 0) break;
       }
-      
+
       if (!msgElements || msgElements.length === 0) {
-        console.warn('[SuggestionInjector] Nenhuma mensagem encontrada no DOM');
+        console.warn('[SuggestionInjector] Nenhuma mensagem encontrada no chat ativo');
         return messages;
       }
-      
+
       // Pegar as últimas N mensagens configuradas
       const lastMessages = Array.from(msgElements).slice(-CONFIG.MAX_CONTEXT_MESSAGES);
-      
+
       for (const el of lastMessages) {
         // Detectar se é mensagem recebida ou enviada
-        const isOutgoing = el.classList.contains('message-out') || 
+        const isOutgoing = el.classList.contains('message-out') ||
                            el.closest('[data-testid="msg-container"]')?.querySelector('[data-icon="tail-out"]') ||
                            el.getAttribute('data-id')?.includes('true');
-        
+
         // Extrair texto
         const textEl = el.querySelector('[data-testid="msg-text"], .copyable-text span, .selectable-text span');
         const text = textEl?.textContent?.trim() || '';
-        
+
         if (text) {
           messages.push({
             role: isOutgoing ? 'assistant' : 'user',
-            content: text
+            content: text,
+            chatId: currentChatId  // NOVO: Marcar com chatId para rastreabilidade
           });
         }
       }
-      
-      console.log('[SuggestionInjector] Extraídas', messages.length, 'mensagens do DOM');
+
+      console.log(`[SuggestionInjector] Extraídas ${messages.length} mensagens do chat ativo: ${currentChatId}`);
     } catch (e) {
       console.error('[SuggestionInjector] Erro ao extrair mensagens:', e);
     }
-    
+
     return messages;
   }
 
@@ -804,11 +827,16 @@ Responda APENAS com o texto da sugestão, sem formatação adicional.`;
         return domMessages.slice(-5).map(m => `${m.role === 'user' ? 'Cliente' : 'Você'}: ${m.content}`).join('\n');
       }
       
-      // PRIORIDADE 2: Tentar Store do WhatsApp
-      if (window.Store?.Msg?.getModelsArray) {
-        const msgs = window.Store.Msg.getModelsArray().slice(-CONFIG.MAX_CONTEXT_MESSAGES);
-        if (msgs.length > 0) {
-          return msgs.map(m => `${m.fromMe ? 'Você' : 'Cliente'}: ${m.body || ''}`).join('\n');
+      // PRIORIDADE 2: Tentar Store do WhatsApp (FILTRADO por chat ativo)
+      if (window.Store?.Msg && chatId) {
+        // CORREÇÃO CRÍTICA: Filtrar apenas mensagens do chat ativo
+        const allMsgs = window.Store.Msg.getModelsArray ? window.Store.Msg.getModelsArray() : [];
+        const chatMessages = allMsgs.filter(m => m.id?.remote === chatId);
+        const lastMsgs = chatMessages.slice(-CONFIG.MAX_CONTEXT_MESSAGES);
+
+        if (lastMsgs.length > 0) {
+          console.log(`[SuggestionInjector] Usando ${lastMsgs.length} mensagens filtradas do Store (chat: ${chatId})`);
+          return lastMsgs.map(m => `${m.fromMe ? 'Você' : 'Cliente'}: ${m.body || ''}`).join('\n');
         }
       }
       
