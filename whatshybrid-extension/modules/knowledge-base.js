@@ -282,100 +282,118 @@
     }
 
     /**
-     * Verifica se mensagem corresponde a alguma resposta pronta
-     * @param {string} message - Mensagem recebida
-     * @param {Array} cannedReplies - Lista de respostas prontas (opcional)
-     * @returns {Object|null} - Resposta pronta correspondente
+     * Verifica match com resposta rápida
+     * @param {string} message - Mensagem
+     * @param {Array} cannedReplies - Respostas rápidas
+     * @returns {string|null}
      */
     checkCannedReply(message, cannedReplies = null) {
-      const replies = cannedReplies || this.knowledge.cannedReplies;
-      if (!message || replies.length === 0) return null;
-
-      const lowerMessage = message.toLowerCase();
-
-      for (const reply of replies) {
-        for (const trigger of reply.triggers) {
-          const lowerTrigger = trigger.toLowerCase();
-          if (lowerMessage.includes(lowerTrigger)) {
-            return reply;
+      const replies = cannedReplies || this.knowledge.cannedReplies || [];
+      
+      if (!Array.isArray(replies) || replies.length === 0) return null;
+      
+      const msgLower = (message || '').toLowerCase().trim();
+      
+      for (const canned of replies) {
+        const triggers = Array.isArray(canned.triggers) ? canned.triggers : [canned.trigger];
+        
+        for (const trigger of triggers) {
+          if (trigger && msgLower.includes(trigger.toLowerCase())) {
+            return canned.reply || canned.response;
           }
         }
       }
-
+      
       return null;
     }
 
     /**
-     * Busca FAQ correspondente
-     * @param {string} message - Mensagem recebida
-     * @param {Array} faqs - Lista de FAQs (opcional)
-     * @returns {Object|null} - FAQ correspondente
+     * Busca FAQ com score de similaridade
+     * @param {string} message - Mensagem
+     * @param {Array} faqs - FAQs
+     * @returns {Object|null} - { question, answer, confidence }
      */
     findFAQMatch(message, faqs = null) {
-      const faqList = faqs || this.knowledge.faq;
-      if (!message || faqList.length === 0) return null;
-
-      const lowerMessage = message.toLowerCase();
+      const faqList = faqs || this.knowledge.faq || [];
+      
+      if (!Array.isArray(faqList) || faqList.length === 0) return null;
+      
+      const msgWords = (message || '').toLowerCase().split(/\s+/).filter(w => w.length > 2);
+      
+      if (msgWords.length === 0) return null;
+      
       let bestMatch = null;
       let bestScore = 0;
-
+      
       for (const faq of faqList) {
-        const lowerQuestion = faq.question.toLowerCase();
+        const questionWords = (faq.question || '').toLowerCase().split(/\s+/).filter(w => w.length > 2);
         
-        // Calcula similaridade simples
-        let score = 0;
-        const words = lowerMessage.split(/\s+/);
+        if (questionWords.length === 0) continue;
         
-        words.forEach(word => {
-          if (word.length > 3 && lowerQuestion.includes(word)) {
-            score += 1;
-          }
-        });
-
-        // Verifica tags
-        if (faq.tags) {
-          faq.tags.forEach(tag => {
-            if (lowerMessage.includes(tag.toLowerCase())) {
-              score += 2;
-            }
-          });
-        }
-
+        const matches = questionWords.filter(qw => 
+          msgWords.some(mw => mw.includes(qw) || qw.includes(mw))
+        );
+        
+        const score = (matches.length / questionWords.length) * 100;
+        
         if (score > bestScore) {
           bestScore = score;
-          bestMatch = faq;
+          bestMatch = {
+            question: faq.question,
+            answer: faq.answer,
+            confidence: Math.round(score)
+          };
         }
       }
-
-      // Retorna apenas se o score for razoável
-      return bestScore >= 2 ? bestMatch : null;
+      
+      return bestMatch;
     }
 
     /**
-     * Busca produto correspondente
-     * @param {string} message - Mensagem recebida
-     * @param {Array} products - Lista de produtos (opcional)
-     * @returns {Object|null} - Produto correspondente
+     * Busca produto por similaridade
+     * @param {string} message - Mensagem
+     * @param {Array} products - Produtos
+     * @returns {Object|null} - { product, confidence }
      */
     findProductMatch(message, products = null) {
-      const productList = products || this.knowledge.products;
-      if (!message || productList.length === 0) return null;
-
-      const lowerMessage = message.toLowerCase();
-
+      const productList = products || this.knowledge.products || [];
+      
+      if (!Array.isArray(productList) || productList.length === 0) return null;
+      
+      const msgLower = (message || '').toLowerCase();
+      const msgWords = msgLower.split(/\s+/).filter(w => w.length > 2);
+      
       for (const product of productList) {
-        const lowerName = product.name.toLowerCase();
-        if (lowerMessage.includes(lowerName)) {
-          return product;
-        }
-
-        // Verifica categoria
-        if (product.category && lowerMessage.includes(product.category.toLowerCase())) {
-          return product;
+        const name = (product.name || '').toLowerCase();
+        
+        // Match exato do nome
+        if (name && msgLower.includes(name)) {
+          return { product, confidence: 95 };
         }
       }
-
-      return null;
+      
+      // Match parcial por palavras
+      let bestMatch = null;
+      let bestScore = 0;
+      
+      for (const product of productList) {
+        const nameWords = (product.name || '').toLowerCase().split(/\s+/).filter(w => w.length > 2);
+        
+        if (nameWords.length === 0) continue;
+        
+        const matches = nameWords.filter(nw => 
+          msgWords.some(mw => mw.includes(nw) || nw.includes(mw))
+        );
+        
+        const score = (matches.length / nameWords.length) * 100;
+        
+        if (score > bestScore && score > 50) {
+          bestScore = score;
+          bestMatch = { product, confidence: Math.round(score) };
+        }
+      }
+      
+      return bestMatch;
     }
 
     /**

@@ -650,6 +650,9 @@
       this.patternStats = new Map();
       this.batchSize = 10;
       this.minConfidence = 0.3;
+      this.learnedPatterns = [];
+      this.MAX_PATTERNS = 200;
+      this.PRUNE_TO = 150;
       this.loadData();
     }
 
@@ -677,6 +680,9 @@
       } catch (error) {
         console.warn('[SmartBot Learning] Erro ao carregar dados:', error);
       }
+      
+      // Carrega padrões aprendidos
+      await this.loadLearnedPatterns();
     }
 
     /**
@@ -899,6 +905,126 @@
           .map(p => ({ pattern: p.pattern, score: p.positive - p.negative })),
         bufferSize: this.feedbackBuffer.length
       };
+    }
+
+    /**
+     * Aprende com uma interação
+     * Baseado em CERTO-WHATSAPPLITE-main-21/05chromeextensionwhatsapp/content/content.js learnFromInteraction()
+     * @param {Object} interaction - { messageText, response, confidence, intent }
+     */
+    learnFromInteraction(interaction) {
+      if (!interaction?.messageText || !interaction?.response) return;
+      
+      const text = interaction.messageText.toLowerCase();
+      
+      // Verifica se já existe padrão similar
+      const existingPattern = this.learnedPatterns.find(p => 
+        p.triggers.some(t => text.includes(t.toLowerCase()))
+      );
+      
+      if (existingPattern) {
+        // Atualiza padrão existente
+        existingPattern.occurrences = (existingPattern.occurrences || 0) + 1;
+        existingPattern.confidence = Math.min(95, (existingPattern.confidence || 70) + 2);
+        existingPattern.lastUsed = Date.now();
+        
+        console.log('[Learning] 📈 Padrão atualizado:', existingPattern.triggers[0], 'conf:', existingPattern.confidence);
+      } else if (interaction.confidence >= 80) {
+        // Cria novo padrão apenas se confiança alta
+        const words = text
+          .split(/\s+/)
+          .filter(w => w.length > 3)
+          .slice(0, 5);
+        
+        if (words.length >= 2) {
+          this.learnedPatterns.push({
+            triggers: words,
+            response: interaction.response,
+            intent: interaction.intent || 'general',
+            confidence: 70,
+            occurrences: 1,
+            createdAt: Date.now(),
+            lastUsed: Date.now()
+          });
+          
+          console.log('[Learning] 📚 Novo padrão aprendido:', words);
+        }
+      }
+      
+      // Prune se exceder limite
+      if (this.learnedPatterns.length > this.MAX_PATTERNS) {
+        this.prunePatterns();
+      }
+      
+      // Salva
+      this.saveLearnedPatterns();
+    }
+
+    /**
+     * Remove padrões menos usados/confiantes
+     */
+    prunePatterns() {
+      // Ordena por score (occurrences * confidence)
+      this.learnedPatterns.sort((a, b) => {
+        const scoreA = (a.occurrences || 0) * (a.confidence || 0);
+        const scoreB = (b.occurrences || 0) * (b.confidence || 0);
+        return scoreB - scoreA;
+      });
+      
+      // Mantém apenas os melhores
+      const removed = this.learnedPatterns.length - this.PRUNE_TO;
+      this.learnedPatterns = this.learnedPatterns.slice(0, this.PRUNE_TO);
+      
+      console.log(`[Learning] 🧹 Pruned ${removed} padrões. Total: ${this.learnedPatterns.length}`);
+    }
+
+    /**
+     * Busca padrão aprendido que faz match
+     * @param {string} text - Texto a buscar
+     * @returns {Object|null} - { pattern, confidence, response }
+     */
+    findLearnedPattern(text) {
+      if (!text) return null;
+      
+      const lowerText = text.toLowerCase();
+      
+      for (const pattern of this.learnedPatterns) {
+        if (pattern.triggers.some(t => lowerText.includes(t.toLowerCase()))) {
+          return {
+            pattern,
+            confidence: pattern.confidence || 85,
+            response: pattern.response
+          };
+        }
+      }
+      
+      return null;
+    }
+
+    /**
+     * Salva padrões aprendidos
+     */
+    async saveLearnedPatterns() {
+      try {
+        await chrome.storage.local.set({
+          'whl_learned_patterns': this.learnedPatterns
+        });
+      } catch (e) {
+        console.error('[Learning] Erro ao salvar padrões:', e);
+      }
+    }
+
+    /**
+     * Carrega padrões aprendidos
+     */
+    async loadLearnedPatterns() {
+      try {
+        const data = await chrome.storage.local.get('whl_learned_patterns');
+        this.learnedPatterns = data.whl_learned_patterns || [];
+        console.log('[Learning] Carregados', this.learnedPatterns.length, 'padrões');
+      } catch (e) {
+        console.error('[Learning] Erro ao carregar padrões:', e);
+      }
     }
 
     /**

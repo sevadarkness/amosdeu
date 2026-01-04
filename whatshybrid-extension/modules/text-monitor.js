@@ -238,6 +238,30 @@
     }
 
     /**
+     * Detecta se mensagem é saudação simples
+     * @param {string} text - Texto
+     * @returns {boolean}
+     */
+    isSimpleGreeting(text) {
+      const greetings = [
+        'oi', 'olá', 'ola', 'oie', 'oii', 'oiii',
+        'bom dia', 'boa tarde', 'boa noite',
+        'eae', 'eai', 'fala', 'salve',
+        'hey', 'hi', 'hello',
+        'opa', 'opaa', 'e aí', 'e ai',
+        'blz', 'beleza', 'td bem', 'tudo bem'
+      ];
+      
+      const normalized = (text || '').toLowerCase().trim();
+      
+      // Match exato ou começa com saudação + separador
+      return greetings.some(g => 
+        normalized === g || 
+        /^[\s,!?.]/.test(normalized.slice(g.length)) && normalized.startsWith(g)
+      );
+    }
+
+    /**
      * Análise completa de mensagem
      * @param {string} text - Texto para análise
      * @returns {Object} - Análise completa
