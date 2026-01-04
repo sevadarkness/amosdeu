@@ -5,6 +5,43 @@
  * Funciona online (com backend) e offline (storage local)
  * 
  * @version 2.0.0
+ * 
+ * FUNCIONALIDADES:
+ * ✅ Criação e gerenciamento de campanhas
+ * ✅ Importação de contatos via CSV
+ * ✅ Templates com variáveis dinâmicas ({nome}, {telefone}, {custom})
+ * ✅ Envio em massa com rate limiting (30/hora, 200/dia)
+ * ✅ Proteção anti-spam e anti-ban
+ * ✅ Agendamento de campanhas
+ * ✅ Pausa/retomada/cancelamento
+ * ✅ Estatísticas e relatórios
+ * ✅ Exportação de resultados (JSON/CSV)
+ * ✅ Modo híbrido: Backend API + Storage Local
+ * 
+ * MODO HÍBRIDO:
+ * - Online: Usa BackendClient.campaigns API quando conectado
+ * - Offline: Usa chrome.storage.local como fallback
+ * - Auto-sync: Sincroniza automaticamente quando backend conecta
+ * 
+ * USO BÁSICO:
+ * ```javascript
+ * // Criar campanha
+ * const campaign = await CampaignManager.createCampaign('Black Friday', {
+ *   template: 'Olá {nome}! Temos uma oferta especial para você...',
+ *   delay: { min: 30000, max: 60000 }
+ * });
+ * 
+ * // Importar contatos CSV
+ * const csv = 'nome,telefone\nJoão,11999999999\nMaria,11888888888';
+ * await CampaignManager.importContactsFromCSV(campaign.id, csv);
+ * 
+ * // Iniciar campanha
+ * await CampaignManager.executeCampaign(campaign);
+ * 
+ * // Pausar/Retomar
+ * CampaignManager.pauseCampaign(campaign.id);
+ * CampaignManager.resumeCampaign(campaign.id);
+ * ```
  */
 (function() {
   'use strict';
