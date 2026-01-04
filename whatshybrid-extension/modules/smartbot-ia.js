@@ -1805,7 +1805,7 @@
      * Árvore de decisão para ações
      */
     async decideAction(message, analysis) {
-      const { intent, sentiment, confidence, urgency, learnedMatch } = analysis;
+      const { intent, sentiment, confidence = 0, urgency, learnedMatch } = analysis || {};
       
       if (this.config.humanHoursOnly && !this.isBusinessHours()) {
         return { action: 'queue', reason: 'Fora do horário comercial' };
@@ -1815,7 +1815,7 @@
         return { action: 'queue', reason: 'Rate limit atingido' };
       }
       
-      if (urgency.level === 'high' && sentiment.sentiment === 'negative') {
+      if (urgency?.level === 'high' && sentiment?.sentiment === 'negative') {
         return { action: 'escalate', reason: 'Urgência alta com sentimento negativo', priority: 'urgent' };
       }
       
@@ -1828,9 +1828,9 @@
         };
       }
       
-      const intentConfig = this.knowledge.intents[intent.primaryIntent];
+      const intentConfig = intent?.primaryIntent ? this.knowledge.intents[intent.primaryIntent] : null;
       if (intentConfig && intentConfig.autoSend && confidence >= this.config.confidenceThreshold && intentConfig.responses.length > 0) {
-        const response = this.selectAndAdjustResponse(intentConfig.responses, sentiment.sentiment);
+        const response = this.selectAndAdjustResponse(intentConfig.responses, sentiment?.sentiment || 'neutral');
         return {
           action: 'auto_respond',
           response,
@@ -1844,9 +1844,9 @@
         return {
           action: 'ai_generate',
           context: {
-            intent: intent.primaryIntent,
-            sentiment: sentiment.sentiment,
-            history: this.getConversationContext(message.chatId)
+            intent: intent?.primaryIntent,
+            sentiment: sentiment?.sentiment,
+            history: this.getConversationContext(message?.chatId)
           }
         };
       }
@@ -2216,10 +2216,12 @@
     updateMetrics(analysis) {
       if (!analysis || !analysis.intent || !analysis.intent.primaryIntent) return;
       
+      this.metrics.totalMessages++;
+      
       const intent = analysis.intent.primaryIntent;
       this.metrics.intentDistribution[intent] = (this.metrics.intentDistribution[intent] || 0) + 1;
       
-      if (this.metrics.totalMessages > 0 && analysis.confidence !== undefined) {
+      if (analysis.confidence !== undefined) {
         this.metrics.avgConfidence = (this.metrics.avgConfidence * (this.metrics.totalMessages - 1) + analysis.confidence) / this.metrics.totalMessages;
       }
     }
