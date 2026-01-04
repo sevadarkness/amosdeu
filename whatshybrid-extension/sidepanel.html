@@ -71,9 +71,10 @@
     </div>
     <div class="sp-row" style="gap:6px">
       <input id="sp_audio_file" type="file" accept="audio/*,.mp3,.ogg,.wav,.m4a" style="display:none" />
+      <input id="sp_file" type="file" style="display:none" />
       <button id="sp_attach_audio" class="sp-btn sp-btn-secondary" style="flex:1">🎵 Anexar Áudio</button>
       <button id="sp_select_file" class="sp-btn sp-btn-secondary" style="flex:1">📁 Anexar Arquivo</button>
-      <button id="sp_clear_image" class="sp-btn sp-btn-danger" style="display:none">🗑️ Remover</button>
+      <button id="sp_clear_media" class="sp-btn sp-btn-danger" style="display:none">🗑️ Remover</button>
     </div>
     <div id="sp_image_hint" class="sp-status"></div>
 
@@ -85,6 +86,24 @@
     <div class="wa-chat">
       <div class="wa-bubble">
         <img id="sp_preview_img" src="" style="display:none;max-width:100%;border-radius:10px;margin-bottom:8px" />
+        <div id="sp_preview_audio" style="display:none;margin-bottom:8px;padding:8px;background:rgba(0,0,0,0.1);border-radius:8px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:24px;">🎵</span>
+            <div style="flex:1;">
+              <div style="font-size:12px;font-weight:600;">Áudio anexado</div>
+              <div id="sp_preview_audio_name" style="font-size:10px;color:var(--mod-text-muted);"></div>
+            </div>
+          </div>
+        </div>
+        <div id="sp_preview_file" style="display:none;margin-bottom:8px;padding:8px;background:rgba(0,0,0,0.1);border-radius:8px;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:24px;">📁</span>
+            <div style="flex:1;">
+              <div style="font-size:12px;font-weight:600;">Arquivo anexado</div>
+              <div id="sp_preview_file_name" style="font-size:10px;color:var(--mod-text-muted);"></div>
+            </div>
+          </div>
+        </div>
         <div id="sp_preview_text" style="white-space:pre-wrap;word-break:break-word"></div>
         <div class="wa-time">
           <span id="sp_preview_meta"></span>
@@ -114,7 +133,7 @@
         <div id="sp_stat_failed" style="font-size:16px;font-weight:900">0</div>
       </div>
       <div style="flex:1;min-width:90px;background:rgba(0,0,0,0.10);border:1px solid rgba(255,255,255,0.10);border-radius:12px;padding:8px">
-        <div class="sp-muted" style="font-size:10px">⏳ Pendentes</div>
+        <div style="display:flex;align-items:center;justify-content:center;gap:4px;font-size:10px" class="sp-muted">⏳ <span>Pendentes</span></div>
         <div id="sp_stat_pending" style="font-size:16px;font-weight:900">0</div>
       </div>
     </div>

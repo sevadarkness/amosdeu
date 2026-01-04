@@ -286,8 +286,58 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ============================================
-    // QUICK REPLIES HANDLERS
+    // QUICK REPLIES HANDLERS - with storage-based implementation
     // ============================================
+    
+    const QUICK_REPLIES_STORAGE_KEY = 'whl_quick_replies';
+    
+    async function loadQuickReplies() {
+        try {
+            const data = await chrome.storage.local.get(QUICK_REPLIES_STORAGE_KEY);
+            return data[QUICK_REPLIES_STORAGE_KEY] || [];
+        } catch (e) {
+            console.error('[QuickReplies] Error loading:', e);
+            return [];
+        }
+    }
+    
+    async function saveQuickReplies(replies) {
+        try {
+            await chrome.storage.local.set({ [QUICK_REPLIES_STORAGE_KEY]: replies });
+            return true;
+        } catch (e) {
+            console.error('[QuickReplies] Error saving:', e);
+            return false;
+        }
+    }
+    
+    async function addQuickReply(trigger, response) {
+        const replies = await loadQuickReplies();
+        const cleanTrigger = trigger.toLowerCase().replace(/^\//, '');
+        
+        // Check for duplicates
+        if (replies.some(r => r.trigger === cleanTrigger)) {
+            throw new Error('Gatilho já existe');
+        }
+        
+        const newReply = {
+            id: `qr_${Date.now()}`,
+            trigger: cleanTrigger,
+            response: response,
+            usageCount: 0,
+            createdAt: new Date().toISOString()
+        };
+        
+        replies.push(newReply);
+        await saveQuickReplies(replies);
+        return newReply;
+    }
+    
+    async function deleteQuickReplyById(id) {
+        const replies = await loadQuickReplies();
+        const filtered = replies.filter(r => r.id !== id);
+        await saveQuickReplies(filtered);
+    }
     
     // Add quick reply
     document.getElementById('qr-add-btn')?.addEventListener('click', async () => {
@@ -307,10 +357,10 @@ document.addEventListener('DOMContentLoaded', () => {
         
         try {
             if (btn) btn.textContent = '⏳ Salvando...';
-            await window.quickReplies?.addReply(trigger, response);
+            await addQuickReply(trigger, response);
             document.getElementById('qr-trigger').value = '';
             document.getElementById('qr-response').value = '';
-            renderQuickRepliesList();
+            await renderQuickRepliesList();
             if (btn) {
                 btn.textContent = '✅ Adicionada!';
                 setTimeout(() => {
@@ -483,10 +533,10 @@ document.addEventListener('DOMContentLoaded', () => {
 // RENDER FUNCTIONS FOR NEW FEATURES
 // ============================================
 
-function renderQuickRepliesList() {
+async function renderQuickRepliesList() {
     const list = document.getElementById('qr-list');
     const countEl = document.getElementById('qr-count');
-    const replies = window.quickReplies?.getAll() || [];
+    const replies = await loadQuickReplies();
     
     if (countEl) {
         countEl.textContent = `${replies.length} resposta${replies.length !== 1 ? 's' : ''}`;
@@ -496,7 +546,7 @@ function renderQuickRepliesList() {
     
     if (replies.length === 0) {
         list.innerHTML = '<div class="sp-muted" style="text-align: center; padding: 20px;">Nenhuma resposta rápida cadastrada</div>';
-        updateQuickRepliesStats();
+        await updateQuickRepliesStats();
         return;
     }
     
@@ -519,12 +569,16 @@ function renderQuickRepliesList() {
         </div>
     `).join('');
     
-    updateQuickRepliesStats();
+    await updateQuickRepliesStats();
 }
 
-function updateQuickRepliesStats() {
-    const stats = window.quickReplies?.getStats();
-    if (!stats) return;
+async function updateQuickRepliesStats() {
+    const replies = await loadQuickReplies();
+    const stats = {
+        total: replies.length,
+        totalUsage: replies.reduce((sum, r) => sum + (r.usageCount || 0), 0),
+        mostUsed: [...replies].sort((a, b) => (b.usageCount || 0) - (a.usageCount || 0)).slice(0, 1)
+    };
     
     const totalEl = document.getElementById('qr-stat-total');
     const usageEl = document.getElementById('qr-stat-usage');
@@ -548,6 +602,19 @@ async function deleteQuickReply(id) {
         btn.textContent = '⚠️';
         btn.dataset.confirmDelete = 'pending';
         setTimeout(() => {
+            delete btn.dataset.confirmDelete;
+            btn.textContent = '🗑️';
+        }, 3000);
+        return;
+    }
+    
+    try {
+        await deleteQuickReplyById(id);
+        await renderQuickRepliesList();
+    } catch (e) {
+        console.error('[QuickReplies] Error deleting:', e);
+    }
+}
             if (btn.dataset.confirmDelete === 'pending') {
                 btn.textContent = '🗑️';
                 delete btn.dataset.confirmDelete;

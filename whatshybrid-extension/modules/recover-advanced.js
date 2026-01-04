@@ -123,6 +123,163 @@
   const mediaCache = new LRUCache(50);
 
   // ============================================
+  // VISUAL INDICATORS - Injetar indicadores no DOM do WhatsApp
+  // ============================================
+  
+  function injectIndicatorStyles() {
+    if (document.getElementById('whl-recover-indicator-styles')) return;
+    
+    const styles = document.createElement('style');
+    styles.id = 'whl-recover-indicator-styles';
+    styles.textContent = `
+      .whl-recover-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 600;
+        margin-left: 6px;
+        vertical-align: middle;
+      }
+      
+      .whl-recover-indicator.revoked {
+        background: rgba(239, 68, 68, 0.2);
+        color: #ef4444;
+        border: 1px solid rgba(239, 68, 68, 0.4);
+      }
+      
+      .whl-recover-indicator.deleted {
+        background: rgba(245, 158, 11, 0.2);
+        color: #f59e0b;
+        border: 1px solid rgba(245, 158, 11, 0.4);
+      }
+      
+      .whl-recover-indicator.edited {
+        background: rgba(59, 130, 246, 0.2);
+        color: #3b82f6;
+        border: 1px solid rgba(59, 130, 246, 0.4);
+      }
+      
+      .whl-recover-download-btn {
+        background: rgba(16, 185, 129, 0.2);
+        border: 1px solid rgba(16, 185, 129, 0.4);
+        color: #10b981;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 600;
+        cursor: pointer;
+        margin-left: 6px;
+        transition: all 0.2s;
+      }
+      
+      .whl-recover-download-btn:hover {
+        background: rgba(16, 185, 129, 0.3);
+        transform: scale(1.05);
+      }
+    `;
+    document.head.appendChild(styles);
+  }
+  
+  function injectIndicatorsInDOM() {
+    // Buscar todas as mensagens no DOM
+    const messageContainers = document.querySelectorAll('[data-testid="msg-container"]');
+    
+    messageContainers.forEach(container => {
+      const msgId = container.getAttribute('data-id');
+      if (!msgId) return;
+      
+      // Verificar se já tem indicador
+      if (container.querySelector('.whl-recover-indicator')) return;
+      
+      // Buscar entrada no messageVersions
+      const entry = messageVersions.get(msgId);
+      if (!entry || !entry.history || entry.history.length === 0) return;
+      
+      // Verificar se está no universo revogado
+      if (!isInRevokedUniverse(msgId)) return;
+      
+      // Determinar tipo de mudança
+      const currentState = getCurrentState(msgId);
+      let indicatorType = 'revoked';
+      let indicatorText = 'Revogada';
+      
+      if (currentState === MESSAGE_STATES.DELETED_LOCAL) {
+        indicatorType = 'deleted';
+        indicatorText = 'Apagada';
+      } else if (currentState === MESSAGE_STATES.EDITED) {
+        indicatorType = 'edited';
+        indicatorText = 'Editada';
+      } else if (currentState === MESSAGE_STATES.REVOKED_GLOBAL) {
+        indicatorType = 'revoked';
+        indicatorText = 'Revogada';
+      }
+      
+      // Criar indicador
+      const indicator = document.createElement('span');
+      indicator.className = `whl-recover-indicator ${indicatorType}`;
+      indicator.textContent = `🔄 ${indicatorText}`;
+      indicator.title = `Esta mensagem foi ${indicatorText.toLowerCase()}`;
+      
+      // Criar botão de download se tiver mídia
+      const latestEvent = entry.history[entry.history.length - 1];
+      if (latestEvent.mediaType || latestEvent.mediaDataPreview || latestEvent.mediaDataFull) {
+        const downloadBtn = document.createElement('button');
+        downloadBtn.className = 'whl-recover-download-btn';
+        downloadBtn.textContent = '⬇️ Download';
+        downloadBtn.title = 'Baixar mídia original';
+        downloadBtn.onclick = (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          downloadRealMedia(msgId, latestEvent.mediaType);
+        };
+        
+        // Adicionar botão após indicador
+        indicator.appendChild(downloadBtn);
+      }
+      
+      // Injetar no DOM - tentar vários locais
+      const textContainer = container.querySelector('[data-testid="msg-text"]') ||
+                           container.querySelector('.copyable-text') ||
+                           container.querySelector('.message-text');
+      
+      if (textContainer) {
+        textContainer.appendChild(indicator);
+      } else {
+        // Fallback: adicionar ao container principal
+        container.appendChild(indicator);
+      }
+    });
+  }
+  
+  function startIndicatorMonitor() {
+    // Injetar estilos
+    injectIndicatorStyles();
+    
+    // Injetar indicadores inicialmente
+    setTimeout(() => injectIndicatorsInDOM(), 2000);
+    
+    // Re-injetar periodicamente (caso novos chats sejam abertos)
+    setInterval(() => injectIndicatorsInDOM(), 5000);
+    
+    // Observer para detectar mudanças no DOM (novos chats)
+    const observer = new MutationObserver((mutations) => {
+      // Debounce: só verificar a cada 1s
+      clearTimeout(observer.timeoutId);
+      observer.timeoutId = setTimeout(() => injectIndicatorsInDOM(), 1000);
+    });
+    
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true
+    });
+    
+    console.log('[RecoverAdvanced] 👁️ Monitor de indicadores iniciado');
+  }
+
+  // ============================================
   // INICIALIZAÇÃO
   // ============================================
   async function init() {
@@ -137,6 +294,9 @@
     if (state.messages.length > 0) {
       migrateFromLegacy(state.messages);
     }
+    
+    // Iniciar monitor de indicadores visuais
+    startIndicatorMonitor();
     
     state.initialized = true;
     console.log('[RecoverAdvanced] ✅ Inicializado -', state.messages.length, 'mensagens carregadas');
