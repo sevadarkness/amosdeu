@@ -838,6 +838,74 @@ Responda APENAS com o texto da sugestão, sem formatação adicional.`;
   }
 
   // ============================================================
+  // BOTÃO AZUL DE SUGESTÃO
+  // ============================================================
+
+  function injectSuggestionButton() {
+    // Verificar se já existe
+    if (document.getElementById('whl-ai-suggestion-btn')) return;
+
+    // Tentar encontrar o footer do WhatsApp
+    const footer = document.querySelector('footer') || document.querySelector('[data-testid="conversation-compose-box"]');
+    if (!footer) {
+      console.warn('[SuggestionInjector] Footer não encontrado, tentando novamente...');
+      setTimeout(injectSuggestionButton, 1000);
+      return;
+    }
+
+    // Criar botão azul
+    const button = document.createElement('button');
+    button.id = 'whl-ai-suggestion-btn';
+    button.title = 'Gerar Sugestão de IA (Ctrl+Shift+S)';
+    button.innerHTML = '🤖';
+    
+    // Estilos inline para garantir posicionamento correto
+    Object.assign(button.style, {
+      position: 'absolute',
+      bottom: '65px', // ACIMA do botão de enviar
+      right: '20px',
+      width: '48px',
+      height: '48px',
+      borderRadius: '50%',
+      border: 'none',
+      background: 'linear-gradient(135deg, #3B82F6 0%, #2563EB 100%)',
+      color: 'white',
+      fontSize: '24px',
+      cursor: 'pointer',
+      boxShadow: '0 4px 12px rgba(59, 130, 246, 0.4)',
+      zIndex: '1000',
+      transition: 'all 0.3s ease',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center'
+    });
+
+    // Hover effect
+    button.addEventListener('mouseenter', () => {
+      button.style.transform = 'scale(1.1)';
+      button.style.boxShadow = '0 6px 16px rgba(59, 130, 246, 0.6)';
+    });
+
+    button.addEventListener('mouseleave', () => {
+      button.style.transform = 'scale(1)';
+      button.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.4)';
+    });
+
+    // Click handler - toggle panel and generate suggestion
+    button.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      togglePanel();
+    });
+
+    // Adicionar ao footer
+    footer.style.position = 'relative';
+    footer.appendChild(button);
+
+    console.log('[SuggestionInjector] ✅ Botão azul de sugestão injetado');
+  }
+
+  // ============================================================
   // INICIALIZAÇÃO
   // ============================================================
 
@@ -849,6 +917,16 @@ Responda APENAS com o texto da sugestão, sem formatação adicional.`;
     injectStyles();
     createPanel();
     setupEventListeners();
+    
+    // Injetar botão azul no footer do WhatsApp
+    setTimeout(injectSuggestionButton, 2000);
+    
+    // Re-injetar se o footer for recriado (troca de chat, etc)
+    setInterval(() => {
+      if (!document.getElementById('whl-ai-suggestion-btn')) {
+        injectSuggestionButton();
+      }
+    }, 5000);
 
     state.initialized = true;
     console.log('[SuggestionInjector] ✅ Inicializado');
