@@ -479,6 +479,11 @@
 
     /**
      * Detecta saudações simples
+     * 
+     * NOTE: Esta implementação é intencionalmente duplicada em text-monitor.js
+     * para manter a independência dos módulos. Cada módulo tem suas próprias
+     * necessidades e contextos de uso.
+     * 
      * @param {string} message - Mensagem
      * @returns {boolean}
      */
@@ -549,6 +554,11 @@
 
     /**
      * Verifica match com respostas rápidas (canned replies)
+     * 
+     * NOTE: Esta implementação é intencionalmente duplicada em knowledge-base.js
+     * para manter a independência dos módulos. ConfidenceSystem precisa desta
+     * funcionalidade para suas próprias análises sem depender de KnowledgeBase.
+     * 
      * @param {string} message - Mensagem
      * @param {Array} cannedReplies - Lista de respostas rápidas
      * @returns {string|null} - Resposta ou null

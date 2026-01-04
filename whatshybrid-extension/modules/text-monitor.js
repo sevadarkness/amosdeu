@@ -255,10 +255,14 @@
       const normalized = (text || '').toLowerCase().trim();
       
       // Match exato ou começa com saudação + separador
-      return greetings.some(g => 
-        normalized === g || 
-        /^[\s,!?.]/.test(normalized.slice(g.length)) && normalized.startsWith(g)
-      );
+      return greetings.some(g => {
+        if (normalized === g) return true;
+        if (normalized.startsWith(g)) {
+          const nextChar = normalized.charAt(g.length);
+          return /[\s,!?.]/.test(nextChar);
+        }
+        return false;
+      });
     }
 
     /**

@@ -490,6 +490,7 @@ Retorne APENAS o JSON, sem explicações adicionais.`;
         const data = await chrome.storage.local.get('whl_settings');
         return data.whl_settings || {};
       } catch (e) {
+        console.warn('[MemorySystem] Erro ao carregar settings:', e.message);
         return {};
       }
     }

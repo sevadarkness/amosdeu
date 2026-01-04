@@ -122,18 +122,18 @@
 
     /**
      * Obtém todos os exemplos
-     * @returns {Array} - Lista de exemplos
+     * @returns {Array} - Lista de exemplos (cópia)
      */
     getExamples() {
-      return this.examples;
+      return [...this.examples];
     }
 
     /**
      * Alias para getExamples (compatibilidade)
-     * @returns {Array} - Lista de exemplos
+     * @returns {Array} - Lista de exemplos (cópia)
      */
     getAll() {
-      return this.examples;
+      return [...this.examples];
     }
 
     /**

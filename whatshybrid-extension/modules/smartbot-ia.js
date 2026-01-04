@@ -989,7 +989,8 @@
       const lowerText = text.toLowerCase();
       
       for (const pattern of this.learnedPatterns) {
-        if (pattern.triggers.some(t => lowerText.includes(t.toLowerCase()))) {
+        // pattern.triggers já estão em lowercase do learnFromInteraction
+        if (pattern.triggers.some(t => lowerText.includes(t))) {
           return {
             pattern,
             confidence: pattern.confidence || 85,
