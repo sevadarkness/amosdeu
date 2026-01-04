@@ -851,12 +851,97 @@
   }
 
   // ============================================
+  // BUG 4: NAVIGATION HELPERS FOR MEDIA DOWNLOAD
+  // ============================================
+  
+  /**
+   * BUG 4: Open chat by ID
+   * @param {string} chatId - Chat ID to open
+   * @returns {Promise<boolean>} - true if chat was opened
+   */
+  async function openChatById(chatId) {
+    try {
+      // Method 1: Via Store.Cmd
+      if (window.Store?.Cmd?.openChatAt) {
+        await window.Store.Cmd.openChatAt(chatId);
+        return true;
+      }
+      
+      // Method 2: Via Store.Chat
+      if (window.Store?.Chat?.find) {
+        const chat = await window.Store.Chat.find(chatId);
+        if (chat && window.Store.Cmd?.openChatBottom) {
+          await window.Store.Cmd.openChatBottom(chat);
+          return true;
+        }
+      }
+      
+      // Method 3: Via DOM (find chat in list and click)
+      const chatListItem = document.querySelector(`[data-id="${chatId}"]`) ||
+                          document.querySelector(`[title*="${chatId.split('@')[0]}"]`);
+      if (chatListItem) {
+        chatListItem.click();
+        return true;
+      }
+      
+      return false;
+    } catch (e) {
+      console.error('[RecoverAdvanced] openChatById failed:', e);
+      return false;
+    }
+  }
+
+  /**
+   * BUG 4: Scroll to message
+   * @param {string} messageId - Message ID to scroll to
+   * @returns {Promise<boolean>} - true if scrolled successfully
+   */
+  async function scrollToMessage(messageId) {
+    try {
+      // Method 1: Via Store.Cmd
+      if (window.Store?.Cmd?.scrollToMsg) {
+        await window.Store.Cmd.scrollToMsg(messageId);
+        return true;
+      }
+      
+      // Method 2: Via DOM
+      const msgElement = document.querySelector(`[data-id="${messageId}"]`);
+      if (msgElement) {
+        msgElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return true;
+      }
+      
+      // Method 3: Search in message list
+      const messageList = document.querySelector('[data-testid="conversation-panel-messages"]') ||
+                         document.querySelector('#main [role="application"]');
+      if (messageList) {
+        // Scroll up gradually to find message
+        for (let i = 0; i < 10; i++) {
+          messageList.scrollTop -= 500;
+          await sleep(300);
+          
+          const found = document.querySelector(`[data-id="${messageId}"]`);
+          if (found) {
+            found.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return true;
+          }
+        }
+      }
+      
+      return false;
+    } catch (e) {
+      console.error('[RecoverAdvanced] scrollToMessage failed:', e);
+      return false;
+    }
+  }
+
+  // ============================================
   // BUG 1: DOWNLOAD FULL-SIZE MEDIA (REAL, NOT THUMBNAIL)
   // ============================================
   
   /**
-   * BUG 1 SOLUTION: Download real media content, not just thumbnail
-   * Implements DOM traversal + Store API + Backend fallback
+   * BUG 1 + BUG 4 SOLUTION: Download real media content, not just thumbnail
+   * Implements navigation + DOM traversal + Store API + Backend fallback
    * 
    * @param {string} messageId - The ID of the message to download media from
    * @param {string} mediaType - Type of media (image, video, audio, document, etc.)
@@ -866,45 +951,66 @@
     console.log('[RecoverAdvanced] 🔽 Downloading real media for:', messageId, mediaType);
     
     try {
-      // Step 1: Try to locate message element in DOM
-      const msgElement = document.querySelector(`[data-id="${messageId}"]`);
+      // BUG 4: Step 1: Get message data to find chatId
+      const entry = messageVersions.get(messageId);
+      const chatId = entry?.chatId;
+      
+      if (!chatId) {
+        console.warn('[RecoverAdvanced] No chatId found for message:', messageId);
+        // Try fallback methods
+        return await downloadFullMedia(messageId);
+      }
+      
+      // BUG 4: Step 2: Open the chat
+      console.log('[RecoverAdvanced] Opening chat:', chatId);
+      const chatOpened = await openChatById(chatId);
+      if (!chatOpened) {
+        console.warn('[RecoverAdvanced] Failed to open chat, using fallback');
+        return await downloadFullMedia(messageId);
+      }
+      
+      // BUG 4: Step 3: Wait for chat to load
+      await sleep(2000);
+      
+      // BUG 4: Step 4: Scroll to message
+      console.log('[RecoverAdvanced] Scrolling to message:', messageId);
+      const scrolled = await scrollToMessage(messageId);
+      if (!scrolled) {
+        console.warn('[RecoverAdvanced] Failed to scroll to message');
+      }
+      
+      await sleep(1000);
+      
+      // BUG 4: Step 5: Find message element and download
+      const msgElement = document.querySelector(`[data-id="${messageId}"]`) ||
+                         document.querySelector(`[data-id*="${messageId}"]`);
       
       if (msgElement) {
-        console.log('[RecoverAdvanced] Found message in DOM, trying navigation...');
+        // Find the media container
+        const mediaContainer = msgElement.querySelector('[data-testid="image-thumb"]') ||
+                              msgElement.querySelector('[data-testid="video-thumb"]') ||
+                              msgElement.querySelector('[data-testid="audio-play"]') ||
+                              msgElement.querySelector('img[src*="blob:"]');
         
-        // Step 2: Navigate to previous sibling (where real content is)
-        const parentContainer = msgElement.closest('[data-testid="msg-container"]');
-        const previousSibling = parentContainer?.previousElementSibling;
-        
-        if (previousSibling) {
-          // Step 3: Find download button or media link
-          const downloadBtn = previousSibling.querySelector('[data-testid="media-download"]') ||
-                            previousSibling.querySelector('button[aria-label*="Download"]') ||
-                            previousSibling.querySelector('[data-testid="download"]');
+        if (mediaContainer) {
+          // Click to open full view
+          mediaContainer.click();
+          await sleep(1000);
+          
+          // Find download button in full view
+          const downloadBtn = document.querySelector('[data-testid="download"]') ||
+                             document.querySelector('[aria-label*="Download"]') ||
+                             document.querySelector('button[title*="Download"]');
           
           if (downloadBtn) {
-            // Step 4: Click download button
-            console.log('[RecoverAdvanced] Found download button, triggering download...');
             downloadBtn.click();
-            // Note: Actual download is handled by browser
-            return { success: true, method: 'dom_click', message: 'Download triggered' };
+            return { success: true, method: 'dom_navigation', message: 'Download triggered' };
           }
         }
       }
       
-      // Step 5: Fallback to Store.Msg API
-      if (window.Store?.Msg?.get) {
-        console.log('[RecoverAdvanced] Trying Store.Msg.get...');
-        const msg = await window.Store.Msg.get(messageId);
-        if (msg) {
-          return await downloadMediaFromStore(msg);
-        }
-      }
-      
-      // Step 6: Last fallback - use existing downloadFullMedia
-      console.log('[RecoverAdvanced] Using downloadFullMedia fallback...');
-      const media = await downloadFullMedia(messageId);
-      return media ? { success: true, data: media, method: 'download_full_media' } : { success: false };
+      // Fallback to Store API
+      return await downloadFullMedia(messageId);
       
     } catch (e) {
       console.error('[RecoverAdvanced] downloadRealMedia failed:', e);
@@ -1300,6 +1406,7 @@
     console.log('[RecoverAdvanced] ✅ TXT exportado:', filtered.length, 'mensagens');
   }
 
+  // BUG 5: Fixed exportToPDF - CSP-compliant (no external jsPDF)
   function exportToPDF() {
     const filtered = getFilteredMessages();
     if (filtered.length === 0) {
@@ -1307,80 +1414,57 @@
       return;
     }
 
-    // Usar jsPDF se disponível
-    if (window.jspdf?.jsPDF || window.jsPDF) {
-      const { jsPDF } = window.jspdf || window;
-      const doc = new jsPDF();
-      
-      doc.setFontSize(16);
-      doc.text('WhatsHybrid Recover', 20, 20);
-      doc.setFontSize(10);
-      doc.text(`Exportado em: ${new Date().toLocaleString('pt-BR')}`, 20, 30);
-      doc.text(`Total: ${filtered.length} mensagens`, 20, 36);
-      
-      let y = 50;
-      filtered.forEach((m, i) => {
-        if (y > 270) {
-          doc.addPage();
-          y = 20;
-        }
-        
-        const date = new Date(m.timestamp).toLocaleString('pt-BR');
-        const action = { revoked: 'REVOGADA', deleted: 'APAGADA', edited: 'EDITADA' }[m.action] || m.action;
-        
-        doc.setFontSize(9);
-        doc.setTextColor(100);
-        doc.text(`[${date}] ${action} - De: ${m.from}`, 20, y);
-        y += 5;
-        
-        doc.setFontSize(10);
-        doc.setTextColor(0);
-        const body = m.body || `[Mídia: ${m.type}]`;
-        const lines = doc.splitTextToSize(body, 170);
-        doc.text(lines, 20, y);
-        y += lines.length * 5 + 8;
-      });
-      
-      doc.save(`recover_${Date.now()}.pdf`);
-      console.log('[RecoverAdvanced] ✅ PDF exportado:', filtered.length, 'mensagens');
-    } else {
-      // Fallback: gerar HTML e abrir para impressão
-      const html = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>WhatsHybrid Recover</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 20px; }
-            h1 { color: #00a884; }
-            .msg { border-bottom: 1px solid #ddd; padding: 10px 0; }
-            .meta { color: #666; font-size: 12px; }
-            .body { margin-top: 5px; }
-          </style>
-        </head>
-        <body>
-          <h1>WhatsHybrid Recover</h1>
+    // BUG 5 FIX: Use HTML/print method only (CSP-compliant)
+    // No external jsPDF loading to avoid CSP violations
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>WhatsHybrid Recover - Export</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; max-width: 800px; margin: 0 auto; }
+          h1 { color: #00a884; border-bottom: 2px solid #00a884; padding-bottom: 10px; }
+          .meta { color: #666; font-size: 12px; margin-bottom: 20px; }
+          .msg { border-left: 3px solid #00a884; padding: 10px 15px; margin: 15px 0; background: #f5f5f5; }
+          .msg-header { color: #666; font-size: 11px; margin-bottom: 5px; }
+          .msg-body { font-size: 14px; line-height: 1.5; }
+          .action-revoked { border-left-color: #e74c3c; }
+          .action-deleted { border-left-color: #f39c12; }
+          .action-edited { border-left-color: #3498db; }
+          @media print {
+            .msg { break-inside: avoid; }
+          }
+        </style>
+      </head>
+      <body>
+        <h1>📱 WhatsHybrid Recover</h1>
+        <div class="meta">
           <p>Exportado em: ${new Date().toLocaleString('pt-BR')}</p>
-          <p>Total: ${filtered.length} mensagens</p>
-          <hr>
-          ${filtered.map(m => `
-            <div class="msg">
-              <div class="meta">
-                [${new Date(m.timestamp).toLocaleString('pt-BR')}] 
-                ${m.action?.toUpperCase()} - De: ${m.from}
-              </div>
-              <div class="body">${(m.body || `[Mídia: ${m.type}]`).replace(/\n/g, '<br>')}</div>
+          <p>Total: ${filtered.length} mensagens recuperadas</p>
+        </div>
+        ${filtered.map(m => `
+          <div class="msg action-${m.action || 'revoked'}">
+            <div class="msg-header">
+              [${new Date(m.timestamp).toLocaleString('pt-BR')}] 
+              ${(m.action || 'revoked').toUpperCase()} | De: ${m.from || 'Desconhecido'}
             </div>
-          `).join('')}
-        </body>
-        </html>
-      `;
-      
-      const win = window.open('', '_blank');
-      win.document.write(html);
-      win.document.close();
+            <div class="msg-body">${(m.body || `[Mídia: ${m.type}]`).replace(/\n/g, '<br>')}</div>
+          </div>
+        `).join('')}
+      </body>
+      </html>
+    `;
+    
+    const win = window.open('', '_blank', 'width=800,height=600');
+    win.document.write(html);
+    win.document.close();
+    
+    // Auto-trigger print dialog
+    setTimeout(() => {
       win.print();
-    }
+    }, 500);
+    
+    console.log('[RecoverAdvanced] ✅ PDF export via print:', filtered.length, 'mensagens');
   }
 
   function download(content, filename, type) {

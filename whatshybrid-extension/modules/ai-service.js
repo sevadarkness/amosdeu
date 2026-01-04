@@ -320,12 +320,23 @@
   async function loadState() {
     try {
       const stored = await chrome.storage.local.get(CONFIG.STORAGE_KEY);
-      if (stored[CONFIG.STORAGE_KEY]) {
-        const loaded = JSON.parse(stored[CONFIG.STORAGE_KEY]);
-        state.configs = loaded.configs || {};
-        state.defaultProvider = loaded.defaultProvider || 'openai';
-        state.fallbackChain = loaded.fallbackChain || ['openai', 'anthropic', 'venice', 'groq'];
-        state.stats = loaded.stats || state.stats;
+      let data = stored[CONFIG.STORAGE_KEY];
+      
+      // BUG FIX 1: Parse if it's a string (stored as JSON string instead of object)
+      if (typeof data === 'string') {
+        try {
+          data = JSON.parse(data);
+        } catch (e) {
+          console.warn('[AIService] Failed to parse stored config:', e);
+          data = null;
+        }
+      }
+      
+      if (data) {
+        state.configs = data.configs || {};
+        state.defaultProvider = data.defaultProvider || 'openai';
+        state.fallbackChain = data.fallbackChain || ['openai', 'anthropic', 'venice', 'groq'];
+        state.stats = data.stats || state.stats;
       }
     } catch (e) {
       console.warn('[AIService] Falha ao carregar estado:', e);
@@ -334,13 +345,15 @@
 
   async function saveState() {
     try {
+      // BUG FIX 1: Save as object, NOT JSON.stringify()
+      // Chrome storage will automatically serialize the object
       await chrome.storage.local.set({
-        [CONFIG.STORAGE_KEY]: JSON.stringify({
+        [CONFIG.STORAGE_KEY]: {
           configs: state.configs,
           defaultProvider: state.defaultProvider,
           fallbackChain: state.fallbackChain,
           stats: state.stats
-        })
+        }
       });
     } catch (e) {
       console.error('[AIService] Falha ao salvar estado:', e);

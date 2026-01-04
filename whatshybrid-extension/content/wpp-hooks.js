@@ -245,6 +245,41 @@ window.whl_hooks_main = () => {
     // Sorted country codes (longest first) for efficient prefix matching
     const SORTED_COUNTRY_CODES = VALID_COUNTRY_CODES.slice().sort((a, b) => b.length - a.length);
     
+    // ===== BUG FIX 3: HELPER FUNCTIONS =====
+    
+    /**
+     * Convert base64 to Blob
+     * @param {string} base64 - Base64 encoded data
+     * @param {string} contentType - MIME type
+     * @returns {Blob} - Blob object
+     */
+    function base64ToBlob(base64, contentType = '') {
+        const sliceSize = 512;
+        const byteCharacters = atob(base64.split(',').pop() || base64);
+        const byteArrays = [];
+
+        for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
+            const slice = byteCharacters.slice(offset, offset + sliceSize);
+            const byteNumbers = new Array(slice.length);
+            for (let i = 0; i < slice.length; i++) {
+                byteNumbers[i] = slice.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            byteArrays.push(byteArray);
+        }
+
+        return new Blob(byteArrays, { type: contentType });
+    }
+    
+    /**
+     * Sleep helper function
+     * @param {number} ms - Milliseconds to sleep
+     * @returns {Promise} - Promise that resolves after delay
+     */
+    function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+    
     // ===== HELPER FUNCTIONS FOR GROUP MEMBER EXTRACTION =====
     function safeRequire(name) {
         try {
@@ -1890,24 +1925,40 @@ window.whl_hooks_main = () => {
         console.log(`[WHL Recover] Mensagem recuperada de ${entrada.from}: ${entrada.body.substring(0, 50)}...`);
     }
 
+    // BUG FIX 3: Enhanced module detection with multiple fallback methods
     function tryRequireModule(moduleNames) {
-        if (Array.isArray(moduleNames)) {
-            for (const moduleName of moduleNames) {
-                try {
-                    const module = require(moduleName);
-                    if (module) return module;
-                } catch (e) {
-                    // Module not found, try next
-                }
-            }
-            return null;
-        } else {
+        const names = Array.isArray(moduleNames) ? moduleNames : [moduleNames];
+        
+        for (const name of names) {
             try {
-                return require(moduleNames);
-            } catch (e) {
-                return null;
-            }
+                // Method 1: Direct require
+                if (typeof require === 'function') {
+                    const mod = require(name);
+                    if (mod) return mod;
+                }
+            } catch (e) {}
+            
+            try {
+                // Method 2: Via window.require
+                if (typeof window.require === 'function') {
+                    const mod = window.require(name);
+                    if (mod) return mod;
+                }
+            } catch (e) {}
+            
+            try {
+                // Method 3: Via Store global
+                if (window.Store) {
+                    // Try common Store paths
+                    const paths = ['Msg', 'Chat', 'Contact', 'MediaPrep', 'MediaUpload'];
+                    for (const path of paths) {
+                        if (window.Store[path]) return { [path]: window.Store[path] };
+                    }
+                }
+            } catch (e) {}
         }
+        
+        return null;
     }
 
     // ===== HOOK PARA MENSAGENS APAGADAS =====
@@ -3063,6 +3114,57 @@ window.whl_hooks_main = () => {
         
         console.error('[WHL Hooks] ❌ TODAS as camadas falharam para enviar arquivo');
         return false;
+    }
+
+    /**
+     * BUG FIX 3: DOM-based fallback for sending media
+     * @param {string} chatId - Chat ID
+     * @param {Object} mediaData - Media data object
+     * @param {Object} options - Additional options
+     * @returns {Promise<Object>} - Result object
+     */
+    async function sendMediaViaDOM(chatId, mediaData, options = {}) {
+        try {
+            console.log('[WHL Hooks] 📎 Sending media via DOM fallback...');
+            
+            // 1. Find attach button
+            const attachBtn = document.querySelector('[data-testid="attach-menu-plus"]') ||
+                              document.querySelector('[data-testid="clip"]') ||
+                              document.querySelector('[title*="Attach"]');
+            
+            if (!attachBtn) throw new Error('Attach button not found');
+            
+            attachBtn.click();
+            await sleep(500);
+            
+            // 2. Find file input
+            const fileInput = document.querySelector('input[type="file"]');
+            if (!fileInput) throw new Error('File input not found');
+            
+            // 3. Create file from base64
+            const blob = base64ToBlob(mediaData.base64, mediaData.mimetype);
+            const file = new File([blob], mediaData.filename || 'file', { type: mediaData.mimetype });
+            
+            // 4. Set file to input
+            const dataTransfer = new DataTransfer();
+            dataTransfer.items.add(file);
+            fileInput.files = dataTransfer.files;
+            
+            // 5. Dispatch change event
+            fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+            
+            await sleep(1000);
+            
+            // 6. Click send button
+            const sendBtn = document.querySelector('[data-testid="send"]') ||
+                            document.querySelector('[aria-label*="Send"]');
+            if (sendBtn) sendBtn.click();
+            
+            return { success: true, method: 'dom' };
+        } catch (e) {
+            console.error('[WHL Hooks] DOM media send failed:', e);
+            return { success: false, error: e.message };
+        }
     }
 
     /**
