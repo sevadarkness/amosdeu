@@ -94,20 +94,18 @@
                   document.querySelector('[data-testid="conversation-compose-box-input"]');
     if (!input) return;
     
-    input.focus();
+    // CORREÇÃO CRÍTICA: Limpar campo COMPLETAMENTE antes de inserir
+    input.textContent = '';
     input.innerHTML = '';
+    input.focus();
     
-    // Usar HumanTyping se disponível
-    if (window.HumanTyping?.type) {
-      window.HumanTyping.type(input, text, { minDelay: 20, maxDelay: 50 }).catch(console.error);
-    } else {
-      // Fallback
-      for (const char of text) {
-        document.execCommand('insertText', false, char);
-        await new Promise(r => setTimeout(r, Math.random() * 30 + 15));
-      }
-    }
+    // Aguardar um momento para garantir que o campo foi limpo
+    await new Promise(r => setTimeout(r, 50));
     
+    // Inserir texto UMA ÚNICA VEZ usando apenas execCommand
+    document.execCommand('insertText', false, text);
+    
+    // Dispara evento de input UMA ÚNICA VEZ
     input.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
@@ -116,7 +114,7 @@
 
   const CONFIG = {
     PANEL_ID: 'whl-suggestions-panel',
-    MAX_SUGGESTIONS: 5,
+    MAX_SUGGESTIONS: 1, // Show only ONE best suggestion
     AUTO_HIDE_DELAY: 0, // 0 = NUNCA fecha automaticamente - usuário fecha manualmente
     ANIMATION_DURATION: 300
   };
@@ -567,29 +565,16 @@
     inputField.focus();
 
     if (!focusOnly) {
-      // CORREÇÃO: Limpar campo completamente e inserir texto UMA ÚNICA VEZ
+      // CORREÇÃO CRÍTICA: Limpar campo COMPLETAMENTE antes de inserir
+      inputField.textContent = '';
       inputField.innerHTML = '';
       
-      // Método 1: Tentar execCommand (mais compatível com WhatsApp)
-      const inserted = document.execCommand('insertText', false, text);
+      // Aguardar um momento para garantir que o campo foi limpo
+      await new Promise(resolve => setTimeout(resolve, 50));
       
-      // Se execCommand não funcionou, usar método alternativo
-      if (!inserted || !inputField.textContent || inputField.textContent.length === 0) {
-        // v7.5.0: Usar digitação humana se disponível
-        if (window.HumanTyping && typeof window.HumanTyping.type === 'function') {
-          try {
-            await window.HumanTyping.type(inputField, text, { minDelay: 20, maxDelay: 50 });
-          } catch (e) {
-            console.error('[SuggestionInjector] Erro ao digitar:', e);
-          }
-        }
-        
-        // Se ainda não há texto (HumanTyping falhou ou não disponível), usar inserção direta
-        if (!inputField.textContent || inputField.textContent.length === 0) {
-          inputField.textContent = text;
-        }
-      }
-
+      // Método ÚNICO de inserção: usar apenas execCommand para evitar duplicação
+      document.execCommand('insertText', false, text);
+      
       // Dispara evento de input UMA ÚNICA VEZ para WhatsApp detectar
       inputField.dispatchEvent(new InputEvent('input', { bubbles: true }));
 
@@ -632,6 +617,50 @@
       hidePanel();
     } else {
       showPanel();
+      // Generate suggestion immediately when opening
+      requestSuggestionGeneration();
+    }
+  }
+
+  // Request suggestion generation from AI
+  async function requestSuggestionGeneration() {
+    try {
+      // Try to get current chat context
+      const chatId = state.currentChatId || getCurrentChatId();
+      
+      // Request suggestions via SmartRepliesModule if available
+      if (window.SmartRepliesModule && typeof window.SmartRepliesModule.generateSuggestions === 'function') {
+        const contextMessages = window.SmartRepliesModule.getHistory?.(chatId) || [];
+        const suggestions = await window.SmartRepliesModule.generateSuggestions(chatId, contextMessages);
+        if (suggestions && suggestions.length > 0) {
+          showSuggestions(suggestions, chatId);
+        } else {
+          showEmptySuggestion();
+        }
+      } else {
+        // Fallback: show message that AI needs to be configured
+        showEmptySuggestion();
+      }
+    } catch (error) {
+      console.error('[SuggestionInjector] Error generating suggestion:', error);
+      showEmptySuggestion();
+    }
+  }
+
+  function getCurrentChatId() {
+    // Try to get current chat ID from WhatsApp
+    try {
+      if (window.Store?.Chat?.getActive) {
+        return window.Store.Chat.getActive()?.id?._serialized;
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  function showEmptySuggestion() {
+    const body = document.getElementById('whl-sug-body');
+    if (body) {
+      body.innerHTML = '<div class="whl-sug-empty">Configure a IA no painel de configurações para ver sugestões.</div>';
     }
   }
 

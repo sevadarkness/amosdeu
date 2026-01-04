@@ -87,6 +87,16 @@
             systemPrompt: `Você é um especialista em suporte técnico. Forneça soluções claras e passo a passo. Seja paciente e detalhado. Confirme a resolução.`,
             temperature: 0.4, maxTokens: 500
         },
+        concierge: {
+            id: 'concierge', name: '🎩 Concierge', description: 'Elegante e prestativo',
+            systemPrompt: `Você é um concierge de luxo. Mantenha um tom elegante, sofisticado e extremamente prestativo. Antecipe necessidades e ofereça soluções premium. Seja discreto e atencioso aos detalhes.`,
+            temperature: 0.6, maxTokens: 400
+        },
+        coach: {
+            id: 'coach', name: '🎯 Coach', description: 'Motivacional e questionador',
+            systemPrompt: `Você é um coach motivacional. Faça perguntas poderosas que levem à reflexão. Encoraje o crescimento e a ação. Use uma abordagem positiva e inspiradora. Ajude as pessoas a encontrarem suas próprias soluções.`,
+            temperature: 0.7, maxTokens: 400
+        },
         custom: {
             id: 'custom', name: '✨ Personalizado', description: 'Configure seu próprio assistente',
             systemPrompt: '', temperature: 0.7, maxTokens: 400
@@ -111,7 +121,7 @@
         MAX_TYPING_TIME: 5000,
         MAX_AUTO_RESPONSES: 5,
         CONTEXT_MESSAGES: 10,
-        SUGGESTIONS_COUNT: 3,
+        SUGGESTIONS_COUNT: 1, // Generate only ONE best suggestion
         SENTIMENT_KEYWORDS: {
             positive: ['obrigado', 'ótimo', 'excelente', 'perfeito', 'adorei', 'maravilhoso', 'parabéns', 'top', 'amei', 'incrível', 'show', 'demais', 'legal', 'bom', 'gostei', 'satisfeito'],
             negative: [

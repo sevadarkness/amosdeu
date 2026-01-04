@@ -493,8 +493,8 @@ function showView(viewName) {
           if (imgBtn) imgBtn.textContent = '📎 Anexar imagem';
           const fileBtn = $('sp_select_file');
           if (fileBtn) fileBtn.textContent = '📁 Anexar Arquivo';
-          const audioBtn = $('sp_record_audio');
-          if (audioBtn) audioBtn.textContent = '🎤 Gravar Áudio';
+          const audioBtn = $('sp_attach_audio');
+          if (audioBtn) audioBtn.textContent = '🎵 Anexar Áudio';
 
           // Sincroniza estado no content script
           await motor('SET_IMAGE_DATA', { imageData: null });
@@ -553,16 +553,51 @@ function showView(viewName) {
       });
     }
 
-    // Audio Recording
-    const audioBtn = $('sp_record_audio');
-    if (audioBtn) {
-      audioBtn.addEventListener('click', () => {
-        console.log('[SidePanel Router] 🎤 Audio button clicked!');
-        if (window.AudioFileHandler?.toggleRecording) {
-          window.AudioFileHandler.toggleRecording();
-        } else {
-          console.error('[SidePanel Router] ❌ AudioFileHandler not available');
-          alert('Módulo de áudio não disponível');
+    // Audio File Attachment
+    const audioFileInput = $('sp_audio_file');
+    const audioBtn = $('sp_attach_audio');
+    if (audioBtn && audioFileInput) {
+      audioBtn.addEventListener('click', () => audioFileInput.click());
+    }
+    if (audioFileInput) {
+      audioFileInput.addEventListener('change', async () => {
+        const file = audioFileInput.files?.[0];
+        if (!file) return;
+
+        try {
+          const hint = $('sp_image_hint');
+          if (hint) hint.textContent = '⏳ Carregando áudio...';
+
+          // Read file as data URL
+          const reader = new FileReader();
+          reader.onload = async (e) => {
+            const audioData = e.target.result;
+            
+            // Store audio data in state
+            await motor('SET_AUDIO_DATA', { 
+              audioData, 
+              filename: file.name, 
+              mimeType: file.type,
+              duration: 0 // Duration will be calculated later if needed
+            });
+
+            // Update UI
+            if (audioBtn) audioBtn.textContent = `🎵 ${file.name}`;
+            const clearBtn = $('sp_clear_image');
+            if (clearBtn) clearBtn.style.display = '';
+            if (hint) hint.textContent = `✅ Áudio: ${file.name}`;
+
+            console.log('[SidePanel Router] Audio file loaded:', file.name);
+          };
+          
+          reader.onerror = () => {
+            if (hint) hint.textContent = '❌ Erro ao carregar áudio';
+          };
+          
+          reader.readAsDataURL(file);
+        } catch (e) {
+          const hint = $('sp_image_hint');
+          if (hint) hint.textContent = `❌ ${e.message || e}`;
         }
       });
     }
@@ -599,8 +634,8 @@ function showView(viewName) {
           if (hint) hint.textContent = `✅ Áudio anexado — ${principalAudioName}` + (principalAudioDuration ? ` (${principalAudioDuration}s)` : '');
           const clearBtn = $('sp_clear_image');
           if (clearBtn) clearBtn.style.display = '';
-          const audioBtn = $('sp_record_audio');
-          if (audioBtn) audioBtn.textContent = '🎤 Regravar Áudio';
+          const audioBtn = $('sp_attach_audio');
+          if (audioBtn) audioBtn.textContent = '🎵 Trocar Áudio';
           const imgBtn = $('sp_select_image');
           if (imgBtn) imgBtn.textContent = '📎 Anexar imagem';
           const fileBtn = $('sp_select_file');
@@ -680,8 +715,8 @@ function showView(viewName) {
             fileBtn.textContent = '📁 Trocar arquivo';
             const imgBtn = $('sp_select_image');
             if (imgBtn) imgBtn.textContent = '📎 Anexar imagem';
-            const audioBtn = $('sp_record_audio');
-            if (audioBtn) audioBtn.textContent = '🎤 Gravar Áudio';
+            const audioBtn = $('sp_attach_audio');
+            if (audioBtn) audioBtn.textContent = '🎵 Anexar Áudio';
 
             // Sincroniza no content script (estado global da campanha)
             await motor('SET_IMAGE_DATA', { imageData: null });
@@ -1131,7 +1166,7 @@ function showView(viewName) {
     const hint = $('sp_image_hint');
     const imgBtn = $('sp_select_image');
     const fileBtn = $('sp_select_file');
-    const audioBtn = $('sp_record_audio');
+    const audioBtn = $('sp_attach_audio');
     const clearBtn = $('sp_clear_image');
 
     const hasAudio = !!principalAudioData;
