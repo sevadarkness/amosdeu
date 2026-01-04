@@ -222,7 +222,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     // Recover module: broadcast and sync
     WHL_RECOVER_NEW_MESSAGE: handleRecoverNewMessage,
-    WHL_SYNC_RECOVER_HISTORY: handleSyncRecoverHistory
+    WHL_SYNC_RECOVER_HISTORY: handleSyncRecoverHistory,
+    
+    // AI System: Memory and Confidence handlers
+    MEMORY_PUSH: handleMemoryPush,
+    MEMORY_QUERY: handleMemoryQuery,
+    GET_CONFIDENCE: handleGetConfidence,
+    UPDATE_CONFIDENCE: handleUpdateConfidence,
+    TOGGLE_COPILOT: handleToggleCopilot,
+    FEW_SHOT_PUSH: handleFewShotPush,
+    FEW_SHOT_SYNC: handleFewShotSync
   };
   
   // Verificar também por message.type (além de message.action)
@@ -1160,4 +1169,261 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 // SYNC RECOVER HISTORY
 // Consolidated into main message listener above
 // ============================================
+
+// ============================================
+// AI SYSTEM HANDLERS
+// ============================================
+
+// Memory queue for offline storage
+let memoryQueue = [];
+const MAX_MEMORY_QUEUE = 500;
+const MEMORY_EVENT_MAX_AGE = 24 * 60 * 60 * 1000; // 24 hours
+
+/**
+ * Enfileira evento de memória
+ */
+async function enqueueMemoryEvent(event) {
+  try {
+    memoryQueue.push({
+      ...event,
+      timestamp: event.timestamp || Date.now()
+    });
+    
+    // Limita tamanho da fila
+    if (memoryQueue.length > MAX_MEMORY_QUEUE) {
+      memoryQueue = memoryQueue.slice(-MAX_MEMORY_QUEUE);
+    }
+    
+    // Remove eventos muito antigos
+    const cutoff = Date.now() - MEMORY_EVENT_MAX_AGE;
+    memoryQueue = memoryQueue.filter(e => e.timestamp > cutoff);
+    
+    // Salva fila
+    await chrome.storage.local.set({ whl_memory_queue: memoryQueue });
+    
+    console.log('[Background] Evento de memória enfileirado. Fila:', memoryQueue.length);
+  } catch (error) {
+    console.error('[Background] Erro ao enfileirar evento:', error);
+  }
+}
+
+/**
+ * Envia fila de memórias para o backend
+ */
+async function flushMemoryQueue(settings) {
+  if (memoryQueue.length === 0) return;
+  
+  try {
+    const backendUrl = settings?.backend_url || 'http://localhost:3000';
+    const token = settings?.backend_token;
+    
+    if (!token) {
+      console.warn('[Background] Token não configurado, não é possível sincronizar memórias');
+      return;
+    }
+    
+    const response = await fetch(`${backendUrl}/v1/memory/batch.php`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({ events: memoryQueue })
+    });
+    
+    if (response.ok) {
+      console.log('[Background] Memórias sincronizadas:', memoryQueue.length);
+      memoryQueue = [];
+      await chrome.storage.local.set({ whl_memory_queue: [] });
+    } else {
+      console.error('[Background] Erro ao sincronizar memórias:', response.status);
+    }
+  } catch (error) {
+    console.error('[Background] Erro ao sincronizar memórias:', error);
+  }
+}
+
+/**
+ * Handler: MEMORY_PUSH
+ */
+async function handleMemoryPush(message, sender, sendResponse) {
+  try {
+    await enqueueMemoryEvent(message.event || { type: 'unknown' });
+    
+    // Tenta sincronizar se habilitado
+    const settings = await chrome.storage.local.get(['backend_token', 'backend_url', 'memory_sync_enabled']);
+    if (settings.memory_sync_enabled) {
+      await flushMemoryQueue(settings);
+    }
+    
+    sendResponse({ success: true });
+  } catch (error) {
+    console.error('[Background] Erro em MEMORY_PUSH:', error);
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Handler: MEMORY_QUERY
+ */
+async function handleMemoryQuery(message, sender, sendResponse) {
+  try {
+    const settings = await chrome.storage.local.get(['backend_token', 'backend_url']);
+    const backendUrl = settings?.backend_url || 'http://localhost:3000';
+    const token = settings?.backend_token;
+    
+    if (!token) {
+      sendResponse({ success: false, error: 'Backend não configurado' });
+      return;
+    }
+    
+    const response = await fetch(`${backendUrl}/v1/memory/query.php?chatKey=${encodeURIComponent(message.chatKey)}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      sendResponse({ success: true, memory: data.memory });
+    } else {
+      sendResponse({ success: false, error: `HTTP ${response.status}` });
+    }
+  } catch (error) {
+    console.error('[Background] Erro em MEMORY_QUERY:', error);
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Handler: GET_CONFIDENCE
+ */
+async function handleGetConfidence(message, sender, sendResponse) {
+  try {
+    const data = await chrome.storage.local.get('whl_confidence_system');
+    if (data.whl_confidence_system) {
+      const confidence = JSON.parse(data.whl_confidence_system);
+      sendResponse({ success: true, confidence });
+    } else {
+      sendResponse({ success: true, confidence: { score: 0, level: 'beginner' } });
+    }
+  } catch (error) {
+    console.error('[Background] Erro em GET_CONFIDENCE:', error);
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Handler: UPDATE_CONFIDENCE
+ */
+async function handleUpdateConfidence(message, sender, sendResponse) {
+  try {
+    const event = message.event || {};
+    
+    // Envia para backend se configurado
+    const settings = await chrome.storage.local.get(['backend_token', 'backend_url']);
+    const backendUrl = settings?.backend_url || 'http://localhost:3000';
+    const token = settings?.backend_token;
+    
+    if (token) {
+      fetch(`${backendUrl}/v1/confidence/update.php`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(event)
+      }).catch(err => console.warn('[Background] Erro ao enviar confidence:', err));
+    }
+    
+    sendResponse({ success: true });
+  } catch (error) {
+    console.error('[Background] Erro em UPDATE_CONFIDENCE:', error);
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Handler: TOGGLE_COPILOT
+ */
+async function handleToggleCopilot(message, sender, sendResponse) {
+  try {
+    const enabled = message.enabled;
+    
+    // Atualiza configuração
+    await chrome.storage.local.set({ whl_copilot_enabled: enabled });
+    
+    console.log('[Background] Copilot mode:', enabled ? 'ativado' : 'desativado');
+    
+    sendResponse({ success: true, enabled });
+  } catch (error) {
+    console.error('[Background] Erro em TOGGLE_COPILOT:', error);
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Handler: FEW_SHOT_PUSH
+ */
+async function handleFewShotPush(message, sender, sendResponse) {
+  try {
+    const event = message.event || {};
+    
+    // Envia para backend se configurado
+    const settings = await chrome.storage.local.get(['backend_token', 'backend_url']);
+    const backendUrl = settings?.backend_url || 'http://localhost:3000';
+    const token = settings?.backend_token;
+    
+    if (token) {
+      fetch(`${backendUrl}/v1/examples/add.php`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify(event)
+      }).catch(err => console.warn('[Background] Erro ao enviar exemplo:', err));
+    }
+    
+    sendResponse({ success: true });
+  } catch (error) {
+    console.error('[Background] Erro em FEW_SHOT_PUSH:', error);
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
+/**
+ * Handler: FEW_SHOT_SYNC
+ */
+async function handleFewShotSync(message, sender, sendResponse) {
+  try {
+    const settings = await chrome.storage.local.get(['backend_token', 'backend_url']);
+    const backendUrl = settings?.backend_url || 'http://localhost:3000';
+    const token = settings?.backend_token;
+    
+    if (!token) {
+      sendResponse({ success: false, error: 'Backend não configurado' });
+      return;
+    }
+    
+    const response = await fetch(`${backendUrl}/v1/examples/list.php`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      sendResponse({ success: true, examples: data.examples || [] });
+    } else {
+      sendResponse({ success: false, error: `HTTP ${response.status}` });
+    }
+  } catch (error) {
+    console.error('[Background] Erro em FEW_SHOT_SYNC:', error);
+    sendResponse({ success: false, error: error.message });
+  }
+}
+
 
