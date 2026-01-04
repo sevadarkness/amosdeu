@@ -89,6 +89,8 @@
         "modules/quick-replies.js",
         "modules/team-system.js",
         "modules/ui-panel-shadow.js",
+        "modules/business-intelligence.js",
+        "modules/training-debug-tools.js",
         "modules/init.js",
         "content/top-panel-injector.js",
         "content/extractor-v6-optimized.js",
