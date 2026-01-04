@@ -2093,7 +2093,7 @@
       
       const history = this.knowledge.conversationHistory.get(chatId);
       history.push({
-        text: message.text,
+        text: message.text || message.body || '',
         analysis,
         timestamp: Date.now()
       });
@@ -2104,9 +2104,6 @@
       }
     }
 
-    /**
-     * Obtém contexto da conversação (últimas 5 mensagens)
-     */
     /**
      * Trata mudança de chat
      */
@@ -2214,7 +2211,10 @@
      * Atualiza métricas
      */
     updateMetrics(analysis) {
-      if (!analysis || !analysis.intent || !analysis.intent.primaryIntent) return;
+      if (!analysis || !analysis.intent || !analysis.intent.primaryIntent) {
+        console.warn('[SmartBot] updateMetrics: análise inválida ou incompleta');
+        return;
+      }
       
       this.metrics.totalMessages++;
       
