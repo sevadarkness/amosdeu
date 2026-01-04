@@ -35,9 +35,13 @@ class TeamSystem {
   async addMember(name, phone) {
     const cleanPhone = phone.replace(/\D/g, '');
     
+    // Phone number validation constants
+    const MIN_PHONE_DIGITS = 10; // Minimum for most countries
+    const MAX_PHONE_DIGITS = 15; // ITU E.164 standard
+    
     // Validação
-    if (cleanPhone.length < 10 || cleanPhone.length > 15) {
-      throw new Error('Número deve ter entre 10 e 15 dígitos');
+    if (cleanPhone.length < MIN_PHONE_DIGITS || cleanPhone.length > MAX_PHONE_DIGITS) {
+      throw new Error(`Número deve ter entre ${MIN_PHONE_DIGITS} e ${MAX_PHONE_DIGITS} dígitos`);
     }
     
     // Verifica duplicata

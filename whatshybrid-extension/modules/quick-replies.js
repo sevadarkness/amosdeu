@@ -82,8 +82,8 @@ class QuickRepliesSystem {
     // Observar mudanças no body para detectar quando o composer aparece
     observer.observe(document.body, { childList: true, subtree: true });
 
-    // Também verificar periodicamente
-    setInterval(() => this.attachToComposer(), 2000);
+    // Fallback: verificar periodicamente (menos frequente - a cada 5 segundos)
+    setInterval(() => this.attachToComposer(), 5000);
   }
 
   attachToComposer() {

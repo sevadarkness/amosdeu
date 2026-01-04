@@ -293,20 +293,32 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('qr-add-btn')?.addEventListener('click', async () => {
         const trigger = document.getElementById('qr-trigger')?.value.trim();
         const response = document.getElementById('qr-response')?.value.trim();
+        const btn = document.getElementById('qr-add-btn');
         
         if (!trigger || !response) {
-            alert('❌ Preencha o gatilho e a resposta');
+            showStatus('qr-add-btn', '❌ Preencha o gatilho e a resposta', 'error');
             return;
         }
         
         try {
+            if (btn) btn.textContent = '⏳ Salvando...';
             await window.quickReplies?.addReply(trigger, response);
             document.getElementById('qr-trigger').value = '';
             document.getElementById('qr-response').value = '';
             renderQuickRepliesList();
-            alert('✅ Resposta rápida adicionada!');
+            if (btn) {
+                btn.textContent = '✅ Adicionada!';
+                setTimeout(() => {
+                    btn.textContent = '➕ Adicionar Resposta Rápida';
+                }, 2000);
+            }
         } catch (e) {
-            alert('❌ ' + e.message);
+            if (btn) {
+                btn.textContent = `❌ ${e.message}`;
+                setTimeout(() => {
+                    btn.textContent = '➕ Adicionar Resposta Rápida';
+                }, 3000);
+            }
         }
     });
 
@@ -324,21 +336,38 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('team-add-btn')?.addEventListener('click', async () => {
         const name = document.getElementById('team-member-name')?.value.trim();
         const phone = document.getElementById('team-member-phone')?.value.trim();
+        const btn = document.getElementById('team-add-btn');
         
         if (!phone) {
-            alert('❌ Preencha o número do telefone');
+            if (btn) {
+                btn.textContent = '❌ Número!';
+                setTimeout(() => {
+                    btn.textContent = '➕ Adicionar';
+                }, 2000);
+            }
             return;
         }
         
         try {
+            if (btn) btn.textContent = '⏳ Salvando...';
             await window.teamSystem?.addMember(name, phone);
             document.getElementById('team-member-name').value = '';
             document.getElementById('team-member-phone').value = '';
             renderTeamMembersList();
             renderTeamStats();
-            alert('✅ Membro adicionado!');
+            if (btn) {
+                btn.textContent = '✅ Adicionado!';
+                setTimeout(() => {
+                    btn.textContent = '➕ Adicionar';
+                }, 2000);
+            }
         } catch (e) {
-            alert('❌ ' + e.message);
+            if (btn) {
+                btn.textContent = '❌ Erro!';
+                setTimeout(() => {
+                    btn.textContent = '➕ Adicionar';
+                }, 3000);
+            }
         }
     });
     
@@ -360,6 +389,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('team-send-btn')?.addEventListener('click', async () => {
         const message = document.getElementById('team-message')?.value.trim();
         const statusEl = document.getElementById('team-send-status');
+        const btn = document.getElementById('team-send-btn');
         
         if (!message) {
             if (statusEl) {
@@ -378,8 +408,23 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         
-        if (!confirm(`Enviar mensagem para ${selected.length} membro(s)?`)) {
+        // Simple confirmation via button feedback instead of blocking alert
+        if (btn && !btn.dataset.confirmed) {
+            btn.textContent = `⚠️ Confirmar envio para ${selected.length} membro(s)?`;
+            btn.dataset.confirmed = 'pending';
+            setTimeout(() => {
+                if (btn.dataset.confirmed === 'pending') {
+                    btn.textContent = '📤 Enviar para Selecionados';
+                    delete btn.dataset.confirmed;
+                }
+            }, 3000);
             return;
+        }
+        
+        if (btn) {
+            delete btn.dataset.confirmed;
+            btn.textContent = '⏳ Enviando...';
+            btn.disabled = true;
         }
         
         if (statusEl) {
@@ -393,19 +438,35 @@ document.addEventListener('DOMContentLoaded', () => {
                 statusEl.textContent = `✅ Enviado: ${results.success}/${results.total} | ❌ Falhas: ${results.failed}`;
                 statusEl.className = 'sp-status';
             }
+            if (btn) {
+                btn.textContent = '✅ Concluído!';
+                setTimeout(() => {
+                    btn.textContent = '📤 Enviar para Selecionados';
+                    btn.disabled = false;
+                }, 2000);
+            }
             document.getElementById('team-message').value = '';
             renderTeamMembersList();
             renderTeamStats();
             
-            // Show details
+            // Show details if there were failures
             if (results.failed > 0) {
-                const failedNames = results.details.filter(d => d.status === 'failed').map(d => d.member).join(', ');
-                alert(`Falhas: ${failedNames}`);
+                const failedDetails = results.details
+                    .filter(d => d.status === 'failed')
+                    .map(d => `${d.member}: ${d.error || 'Erro desconhecido'}`)
+                    .join('\n');
+                if (statusEl) {
+                    statusEl.textContent += `\n\nDetalhes das falhas:\n${failedDetails}`;
+                }
             }
         } catch (e) {
             if (statusEl) {
                 statusEl.textContent = `❌ Erro: ${e.message}`;
                 statusEl.className = 'sp-status';
+            }
+            if (btn) {
+                btn.textContent = '📤 Enviar para Selecionados';
+                btn.disabled = false;
             }
         }
     });
@@ -476,7 +537,21 @@ function updateQuickRepliesStats() {
 }
 
 async function deleteQuickReply(id) {
-    if (!confirm('Remover esta resposta rápida?')) return;
+    // Use inline confirmation instead of blocking alert
+    const btn = event?.target;
+    if (btn && !btn.dataset.confirmDelete) {
+        btn.textContent = '⚠️';
+        btn.dataset.confirmDelete = 'pending';
+        setTimeout(() => {
+            if (btn.dataset.confirmDelete === 'pending') {
+                btn.textContent = '🗑️';
+                delete btn.dataset.confirmDelete;
+            }
+        }, 3000);
+        return;
+    }
+    
+    if (btn) delete btn.dataset.confirmDelete;
     
     await window.quickReplies?.removeReply(id);
     renderQuickRepliesList();
@@ -540,7 +615,21 @@ function toggleTeamMember(id) {
 }
 
 async function deleteTeamMember(id) {
-    if (!confirm('Remover este membro?')) return;
+    // Use inline confirmation instead of blocking alert
+    const btn = event?.target;
+    if (btn && !btn.dataset.confirmDelete) {
+        btn.textContent = '⚠️';
+        btn.dataset.confirmDelete = 'pending';
+        setTimeout(() => {
+            if (btn.dataset.confirmDelete === 'pending') {
+                btn.textContent = '🗑️';
+                delete btn.dataset.confirmDelete;
+            }
+        }, 3000);
+        return;
+    }
+    
+    if (btn) delete btn.dataset.confirmDelete;
     
     await window.teamSystem?.removeMember(id);
     renderTeamMembersList();
