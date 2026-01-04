@@ -105,6 +105,10 @@
           this.threshold = stored.threshold || 70;
           console.log('[ConfidenceSystem] Dados carregados:', { score: this.score, level: this.level });
         }
+        
+        // Carrega log de eventos
+        await this.loadEventLog();
+        
         this.initialized = true;
       } catch (error) {
         console.error('[ConfidenceSystem] Erro ao inicializar:', error);
@@ -775,6 +779,78 @@
         },
         totalInteractions: this.metrics.totalInteractions
       };
+    }
+
+    /**
+     * Registra evento no log persistente (max 1000 eventos)
+     * @param {string} eventType - Tipo do evento
+     * @param {Object} data - Dados do evento
+     */
+    logEvent(eventType, data = {}) {
+      const event = {
+        type: eventType,
+        data,
+        timestamp: Date.now(),
+        score: this.score,
+        level: this.level
+      };
+
+      // Adiciona ao log
+      this.eventLog.push(event);
+
+      // Limita a 1000 eventos
+      if (this.eventLog.length > 1000) {
+        this.eventLog = this.eventLog.slice(-1000);
+      }
+
+      // Persiste no storage
+      this.saveEventLog();
+
+      console.log('[ConfidenceSystem] Evento registrado:', eventType);
+    }
+
+    /**
+     * Salva log de eventos no storage
+     */
+    async saveEventLog() {
+      try {
+        await chrome.storage.local.set({
+          'whl_confidence_event_log': JSON.stringify(this.eventLog)
+        });
+      } catch (error) {
+        console.warn('[ConfidenceSystem] Erro ao salvar log de eventos:', error);
+      }
+    }
+
+    /**
+     * Carrega log de eventos do storage
+     */
+    async loadEventLog() {
+      try {
+        const data = await chrome.storage.local.get('whl_confidence_event_log');
+        if (data['whl_confidence_event_log']) {
+          this.eventLog = JSON.parse(data['whl_confidence_event_log']);
+          console.log('[ConfidenceSystem] Log de eventos carregado:', this.eventLog.length);
+        }
+      } catch (error) {
+        console.warn('[ConfidenceSystem] Erro ao carregar log de eventos:', error);
+      }
+    }
+
+    /**
+     * Obtém eventos do log com filtro opcional
+     * @param {string} eventType - Tipo de evento para filtrar (opcional)
+     * @param {number} limit - Limite de eventos (padrão: 100)
+     * @returns {Array} - Lista de eventos
+     */
+    getEventLog(eventType = null, limit = 100) {
+      let events = this.eventLog;
+      
+      if (eventType) {
+        events = events.filter(e => e.type === eventType);
+      }
+      
+      return events.slice(-limit);
     }
   }
 
