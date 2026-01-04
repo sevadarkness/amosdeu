@@ -37,6 +37,10 @@ console.log('[SidePanel Router] 📦 Arquivo carregado pelo browser');
     ai: 'whlViewAi',
     autopilot: 'whlViewAutoPilot',
     backend: 'whlViewBackend',
+    
+    // Quick Replies e Team System
+    quickreplies: 'whlViewQuickReplies',
+    team: 'whlViewTeam',
   };
 
   const MAX_QUEUE_RENDER = 500;   // evita travar o side panel em filas gigantes

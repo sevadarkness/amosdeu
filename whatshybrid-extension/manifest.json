@@ -82,6 +82,8 @@
         "modules/human-typing.js",
         "modules/recover-advanced.js",
         "modules/smartbot-autopilot-v2.js",
+        "modules/quick-replies.js",
+        "modules/team-system.js",
         "modules/init.js",
         "content/top-panel-injector.js",
         "content/extractor-v6-optimized.js",
