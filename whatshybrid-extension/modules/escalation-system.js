@@ -822,7 +822,7 @@
     // ============================================================
 
     generateTicketId() { 
-      return `TKT-${Date.now()}-${Math.random().toString(36).substr(2, 6).toUpperCase()}`; 
+      return `TKT-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`; 
     }
     
     generateRuleId() { 
