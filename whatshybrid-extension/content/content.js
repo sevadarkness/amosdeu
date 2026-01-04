@@ -725,47 +725,12 @@
       }
     }
 
-    // Método 5: Usar busca do WhatsApp
-    const searchSelectors = [
-      '[data-testid="chat-list-search"]',
-      '[data-testid="search"]',
-      'div[contenteditable="true"][data-tab="3"]'
-    ];
-    
-    let searchBox = null;
-    for (const sel of searchSelectors) {
-      searchBox = document.querySelector(sel);
-      if (searchBox) break;
-    }
-    
-    if (searchBox) {
-      searchBox.focus();
-      searchBox.textContent = '';
-      document.execCommand('insertText', false, cleanPhone);
-      
-      // Aguardar resultado
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      const result = document.querySelector('[data-testid="cell-frame-container"]');
-      if (result) {
-        result.click();
-        console.log('[WHL] ✅ Chat aberto via busca');
-        
-        // Limpar busca após abrir
-        setTimeout(() => {
-          const clearBtn = document.querySelector('[data-testid="search-clear-btn"]') ||
-                          document.querySelector('[data-icon="x-alt"]') ||
-                          document.querySelector('[aria-label*="Limpar"]');
-          if (clearBtn) clearBtn.click();
-        }, 500);
-        return true;
-      }
-    }
-
-    // Método 6: Último recurso - navegar via URL (na mesma aba, evita recarregar completamente)
-    console.log('[WHL] ⚠️ Usando fallback URL');
-    window.location.href = `https://web.whatsapp.com/send?phone=${cleanPhone}`;
-    return true;
+    // CORREÇÃO: Métodos 5 e 6 REMOVIDOS (causavam busca indevida e reload de página)
+    // Se os métodos 1-4 falharam, retornar erro ao invés de forçar busca/reload
+    console.warn('[WHL] ❌ Nenhum método de abertura de chat funcionou');
+    console.warn('[WHL] Métodos 5 (busca) e 6 (reload) foram REMOVIDOS para evitar comportamento indesejado');
+    console.warn('[WHL] Dica: Verifique se o chat existe ou se o número está correto');
+    return false;
   }
 
   // Iniciar extrator quando documento carregar
