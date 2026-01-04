@@ -576,7 +576,8 @@
       // Focar novamente após limpeza
       inputField.focus();
       
-      // MÉTODO 1: execCommand (preferido)
+      // MÉTODO 1: execCommand (deprecated but widely supported, with fallback)
+      // Note: execCommand is deprecated but still widely supported. Direct insertion is fallback.
       let inserted = false;
       try {
         inserted = document.execCommand('insertText', false, text);
@@ -614,7 +615,7 @@
         console.warn('[SuggestionInjector] Erro ao mover cursor:', e);
       }
       
-      console.log('[SuggestionInjector] Texto inserido:', text.substring(0, 30) + '...');
+      console.log('[SuggestionInjector] Texto inserido:', text.length, 'caracteres');
       return true;
     }
     
