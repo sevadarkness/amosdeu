@@ -90,7 +90,6 @@
         "modules/recover-advanced.js",
         "modules/smartbot-autopilot-v2.js",
         "modules/quick-replies.js",
-        "modules/team-system.js",
         "modules/ui-panel-shadow.js",
         "modules/business-intelligence.js",
         "modules/training-debug-tools.js",
