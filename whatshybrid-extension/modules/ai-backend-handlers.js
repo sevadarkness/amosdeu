@@ -812,10 +812,10 @@
     if (modeIndicator) {
       const modeColors = {
         'off': { bg: 'rgba(107,114,128,0.2)', color: '#9ca3af', icon: '🔴' },
-        'passive': { bg: 'rgba(147,51,234,0.2)', color: '#9333ea', icon: '👁️' },
+        // REMOVED v7.7.0: 'passive' (Observador) - modo removido
         'suggest': { bg: 'rgba(16,185,129,0.2)', color: '#10b981', icon: '💡' },
         'assist': { bg: 'rgba(59,130,246,0.2)', color: '#3b82f6', icon: '🤝' },
-        'auto_draft': { bg: 'rgba(245,158,11,0.2)', color: '#f59e0b', icon: '📝' },
+        // REMOVED v7.7.0: 'auto_draft' (Auto-rascunho) - modo removido
         'semi_auto': { bg: 'rgba(139,92,246,0.2)', color: '#8b5cf6', icon: '⚡' },
         'full_auto': { bg: 'rgba(239,68,68,0.2)', color: '#ef4444', icon: '🤖' }
       };
@@ -829,11 +829,11 @@
   function getModeLabel(mode) {
     const labels = {
       'off': 'Desativado',
-      'passive': 'Observador',
+      // REMOVED v7.7.0: 'passive' (Observador) - modo removido
       'suggest': 'Sugestões',
       'assist': 'Assistente',
-      'auto_draft': 'Auto-rascunho',
-      'semi_auto': 'Semi-auto',
+      // REMOVED v7.7.0: 'auto_draft' (Auto-rascunho) - modo removido
+      'semi_auto': 'Semi-automático',
       'full_auto': 'Automático'
     };
     return labels[mode] || mode;

@@ -361,13 +361,13 @@
         opacity: 1;
       }
 
-      /* Botão flutuante - 🤖 Robot Button v7.5.0 */
+      /* Botão flutuante - 🤖 Robot Button v7.7.0 */
       #whl-suggestion-fab {
-        position: absolute;
-        bottom: ${CONFIG.FAB_BOTTOM};  /* Above input field */
-        right: ${CONFIG.FAB_RIGHT};    /* Left of send button */
-        width: 40px;
-        height: 40px;
+        position: fixed;  /* CORREÇÃO: fixed em vez de absolute */
+        bottom: 70px;     /* Acima do campo de digitação, não sobrepõe botão enviar */
+        right: 90px;      /* Mais à esquerda para não sobrepor enviar */
+        width: 48px;      /* CORREÇÃO: Aumentado de 40px para 48px (melhor toque) */
+        height: 48px;
         border-radius: 50%;
         background: linear-gradient(135deg, #8B5CF6, #3B82F6);
         border: none;
@@ -375,20 +375,25 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 20px;
+        font-size: 24px;  /* CORREÇÃO: Aumentado de 20px para 24px */
         box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
-        z-index: 1000;
-        transition: transform 0.2s, box-shadow 0.2s;
-      }
-      
-      /* Fallback for when button is on body instead of footer */
-      body > #whl-suggestion-fab {
-        position: fixed;
+        z-index: 999;     /* CORREÇÃO: Reduzido de 1000 para 999 */
+        transition: all 0.3s ease;  /* CORREÇÃO: Transição mais suave */
       }
 
       #whl-suggestion-fab:hover {
         transform: scale(1.1);
-        box-shadow: 0 6px 16px rgba(139, 92, 246, 0.5);
+        box-shadow: 0 6px 16px rgba(139, 92, 246, 0.6);
+      }
+
+      /* NOVO: Estado ativo (quando painel está aberto) */
+      #whl-suggestion-fab.active {
+        background: linear-gradient(135deg, #10B981, #059669);  /* Verde quando aberto */
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+      }
+
+      #whl-suggestion-fab.active:hover {
+        box-shadow: 0 6px 16px rgba(16, 185, 129, 0.6);
       }
     `;
     document.head.appendChild(styles);
@@ -650,10 +655,16 @@
   }
 
   function togglePanel() {
+    const fab = document.getElementById('whl-suggestion-fab');
+
     if (state.isVisible) {
       hidePanel();
+      // NOVO: Remover estado visual ativo
+      if (fab) fab.classList.remove('active');
     } else {
       showPanel();
+      // NOVO: Adicionar estado visual ativo
+      if (fab) fab.classList.add('active');
       // Generate suggestion immediately when opening
       requestSuggestionGeneration();
     }
