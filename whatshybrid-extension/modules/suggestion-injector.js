@@ -116,7 +116,10 @@
     PANEL_ID: 'whl-suggestions-panel',
     MAX_SUGGESTIONS: 1, // Show only ONE best suggestion
     // v7.5.0: AUTO_HIDE_DELAY removed - no auto-hide behavior
-    ANIMATION_DURATION: 300
+    ANIMATION_DURATION: 300,
+    // FAB positioning - positioned above WhatsApp input field
+    FAB_BOTTOM: '60px',  // Above input field (input field is ~50px)
+    FAB_RIGHT: '80px'    // Left of send button (send button is ~60px from right)
   };
 
   const state = {
@@ -359,8 +362,8 @@
       /* Botão flutuante - 🤖 Robot Button v7.5.0 */
       #whl-suggestion-fab {
         position: absolute;
-        bottom: 60px;
-        right: 80px;
+        bottom: ${CONFIG.FAB_BOTTOM};  /* Above input field */
+        right: ${CONFIG.FAB_RIGHT};    /* Left of send button */
         width: 40px;
         height: 40px;
         border-radius: 50%;
@@ -425,7 +428,11 @@
     // Find the footer to attach the button relative to it
     const footer = document.querySelector('#main footer') || document.querySelector('footer');
     if (footer) {
-      footer.style.position = 'relative';
+      // Only set position if it's currently static (defensive approach)
+      const currentPosition = window.getComputedStyle(footer).position;
+      if (currentPosition === 'static') {
+        footer.style.position = 'relative';
+      }
       footer.appendChild(fab);
     } else {
       // Fallback: append to body with fixed positioning
