@@ -1755,6 +1755,146 @@
   </div>
 </section>
 
+            <!-- ============ VIEW: QUICK REPLIES ============ -->
+            <section id="whlViewQuickReplies" class="whl-view hidden">
+  <div class="sp-card">
+    <div class="sp-title">⚡ Respostas Rápidas</div>
+    <div class="sp-muted">Crie atalhos para respostas frequentes. Digite /gatilho no chat para usar.</div>
+    
+    <!-- Form para adicionar -->
+    <div style="margin-top: 12px;">
+      <label class="sp-label">Gatilho</label>
+      <input type="text" id="qr-trigger" class="sp-input" placeholder="Ex: preco, horario, pix" style="margin-bottom: 8px;" />
+      
+      <label class="sp-label">Resposta</label>
+      <textarea id="qr-response" class="sp-textarea" rows="3" placeholder="Digite a resposta..."></textarea>
+      
+      <button id="qr-add-btn" class="sp-btn sp-btn-primary" style="width: 100%; margin-top: 10px;">➕ Adicionar Resposta Rápida</button>
+    </div>
+  </div>
+
+  <!-- Lista de respostas -->
+  <div class="sp-card">
+    <div class="sp-title" style="display: flex; justify-content: space-between; align-items: center;">
+      <span>📋 Suas Respostas Rápidas</span>
+      <span class="sp-muted" style="font-size: 11px;" id="qr-count">0 respostas</span>
+    </div>
+    <div id="qr-list" style="margin-top: 10px;">
+      <!-- Renderizado via JS -->
+      <div class="sp-muted" style="text-align: center; padding: 20px;">
+        Nenhuma resposta rápida cadastrada
+      </div>
+    </div>
+  </div>
+
+  <!-- Estatísticas -->
+  <div class="sp-card">
+    <div class="sp-title">📊 Estatísticas</div>
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px;">
+      <div style="text-align: center; padding: 10px; background: rgba(139, 92, 246, 0.1); border-radius: 8px;">
+        <div style="font-size: 20px; font-weight: 600;" id="qr-stat-total">0</div>
+        <div style="font-size: 11px; color: var(--mod-text-muted);">Total</div>
+      </div>
+      <div style="text-align: center; padding: 10px; background: rgba(16, 185, 129, 0.1); border-radius: 8px;">
+        <div style="font-size: 20px; font-weight: 600; color: #10b981;" id="qr-stat-usage">0</div>
+        <div style="font-size: 11px; color: var(--mod-text-muted);">Usos</div>
+      </div>
+      <div style="text-align: center; padding: 10px; background: rgba(245, 158, 11, 0.1); border-radius: 8px;">
+        <div style="font-size: 20px; font-weight: 600; color: #f59e0b;" id="qr-stat-most-used">-</div>
+        <div style="font-size: 11px; color: var(--mod-text-muted);">Mais Usada</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sp-card">
+    <div class="sp-title">💡 Como Usar</div>
+    <div class="sp-muted" style="font-size: 12px;">
+      <p style="margin: 8px 0;">1. Crie uma resposta rápida com um gatilho (ex: "preco")</p>
+      <p style="margin: 8px 0;">2. No WhatsApp, digite <strong>/preco</strong> no campo de mensagem</p>
+      <p style="margin: 8px 0;">3. Selecione a sugestão que aparece ou pressione <strong>Tab</strong>/<strong>Enter</strong></p>
+      <p style="margin: 8px 0;">4. A resposta será inserida automaticamente!</p>
+    </div>
+  </div>
+</section>
+
+            <!-- ============ VIEW: TEAM SYSTEM ============ -->
+            <section id="whlViewTeam" class="whl-view hidden">
+  <div class="sp-card">
+    <div class="sp-title">👥 Sistema de Equipe</div>
+    <div class="sp-muted">Envie mensagens em broadcast para múltiplos membros da equipe.</div>
+    
+    <!-- Nome do remetente -->
+    <div style="margin-top: 12px;">
+      <label class="sp-label">📝 Nome do Remetente</label>
+      <input type="text" id="team-sender-name" class="sp-input" placeholder="Ex: Rede Alabama" />
+      <div class="sp-muted" style="font-size: 11px; margin-top: 4px;">
+        Aparece no início da mensagem: <strong>*Nome:*</strong> mensagem
+      </div>
+    </div>
+  </div>
+
+  <!-- Adicionar membro -->
+  <div class="sp-card">
+    <div class="sp-title">➕ Adicionar Membro</div>
+    <div style="margin-top: 10px;">
+      <label class="sp-label">Nome (opcional)</label>
+      <input type="text" id="team-member-name" class="sp-input" placeholder="Nome do membro" style="margin-bottom: 8px;" />
+      
+      <label class="sp-label">Telefone</label>
+      <div style="display: flex; gap: 8px;">
+        <input type="text" id="team-member-phone" class="sp-input" placeholder="5511999999999" style="flex: 1;" />
+        <button id="team-add-btn" class="sp-btn sp-btn-primary" style="white-space: nowrap;">➕ Adicionar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lista de membros -->
+  <div class="sp-card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+      <div class="sp-title" style="margin: 0;">📋 Membros da Equipe</div>
+      <div style="display: flex; gap: 6px;">
+        <button id="team-select-all" class="sp-btn sp-btn-secondary" style="padding: 4px 10px; font-size: 11px;">✓ Todos</button>
+        <button id="team-clear-selection" class="sp-btn sp-btn-secondary" style="padding: 4px 10px; font-size: 11px;">✗ Limpar</button>
+      </div>
+    </div>
+    <div id="team-members-list" style="max-height: 300px; overflow-y: auto;">
+      <!-- Renderizado via JS -->
+      <div class="sp-muted" style="text-align: center; padding: 20px;">
+        Nenhum membro cadastrado
+      </div>
+    </div>
+  </div>
+
+  <!-- Área de mensagem -->
+  <div class="sp-card">
+    <div class="sp-title">💬 Mensagem para Equipe</div>
+    <textarea id="team-message" class="sp-textarea" rows="4" placeholder="Digite a mensagem que será enviada para os membros selecionados..."></textarea>
+    <button id="team-send-btn" class="sp-btn sp-btn-primary" style="width: 100%; margin-top: 10px; padding: 12px; font-size: 14px;">
+      📤 Enviar para Selecionados
+    </button>
+    <div id="team-send-status" class="sp-status" style="margin-top: 10px;"></div>
+  </div>
+
+  <!-- Estatísticas -->
+  <div class="sp-card">
+    <div class="sp-title">📊 Estatísticas</div>
+    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px;">
+      <div style="text-align: center; padding: 10px; background: rgba(139, 92, 246, 0.1); border-radius: 8px;">
+        <div style="font-size: 20px; font-weight: 600;" id="team-stat-total">0</div>
+        <div style="font-size: 11px; color: var(--mod-text-muted);">Membros</div>
+      </div>
+      <div style="text-align: center; padding: 10px; background: rgba(16, 185, 129, 0.1); border-radius: 8px;">
+        <div style="font-size: 20px; font-weight: 600; color: #10b981;" id="team-stat-selected">0</div>
+        <div style="font-size: 11px; color: var(--mod-text-muted);">Selecionados</div>
+      </div>
+      <div style="text-align: center; padding: 10px; background: rgba(59, 130, 246, 0.1); border-radius: 8px;">
+        <div style="font-size: 20px; font-weight: 600; color: #3b82f6;" id="team-stat-sent">0</div>
+        <div style="font-size: 11px; color: var(--mod-text-muted);">Msgs Enviadas</div>
+      </div>
+    </div>
+  </div>
+</section>
+
         </div>
 
 

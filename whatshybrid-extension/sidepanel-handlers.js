@@ -285,5 +285,288 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // ============================================
+    // QUICK REPLIES HANDLERS
+    // ============================================
+    
+    // Add quick reply
+    document.getElementById('qr-add-btn')?.addEventListener('click', async () => {
+        const trigger = document.getElementById('qr-trigger')?.value.trim();
+        const response = document.getElementById('qr-response')?.value.trim();
+        
+        if (!trigger || !response) {
+            alert('❌ Preencha o gatilho e a resposta');
+            return;
+        }
+        
+        try {
+            await window.quickReplies?.addReply(trigger, response);
+            document.getElementById('qr-trigger').value = '';
+            document.getElementById('qr-response').value = '';
+            renderQuickRepliesList();
+            alert('✅ Resposta rápida adicionada!');
+        } catch (e) {
+            alert('❌ ' + e.message);
+        }
+    });
+
+    // ============================================
+    // TEAM SYSTEM HANDLERS
+    // ============================================
+    
+    // Sender name input
+    document.getElementById('team-sender-name')?.addEventListener('change', async (e) => {
+        await window.teamSystem?.setSenderName(e.target.value);
+        console.log('[TeamSystem] Nome do remetente salvo:', e.target.value);
+    });
+    
+    // Add team member
+    document.getElementById('team-add-btn')?.addEventListener('click', async () => {
+        const name = document.getElementById('team-member-name')?.value.trim();
+        const phone = document.getElementById('team-member-phone')?.value.trim();
+        
+        if (!phone) {
+            alert('❌ Preencha o número do telefone');
+            return;
+        }
+        
+        try {
+            await window.teamSystem?.addMember(name, phone);
+            document.getElementById('team-member-name').value = '';
+            document.getElementById('team-member-phone').value = '';
+            renderTeamMembersList();
+            renderTeamStats();
+            alert('✅ Membro adicionado!');
+        } catch (e) {
+            alert('❌ ' + e.message);
+        }
+    });
+    
+    // Select all members
+    document.getElementById('team-select-all')?.addEventListener('click', () => {
+        window.teamSystem?.selectAll();
+        renderTeamMembersList();
+        renderTeamStats();
+    });
+    
+    // Clear selection
+    document.getElementById('team-clear-selection')?.addEventListener('click', () => {
+        window.teamSystem?.clearSelection();
+        renderTeamMembersList();
+        renderTeamStats();
+    });
+    
+    // Send to team
+    document.getElementById('team-send-btn')?.addEventListener('click', async () => {
+        const message = document.getElementById('team-message')?.value.trim();
+        const statusEl = document.getElementById('team-send-status');
+        
+        if (!message) {
+            if (statusEl) {
+                statusEl.textContent = '❌ Digite uma mensagem';
+                statusEl.className = 'sp-status';
+            }
+            return;
+        }
+        
+        const selected = window.teamSystem?.getSelected() || [];
+        if (selected.length === 0) {
+            if (statusEl) {
+                statusEl.textContent = '❌ Selecione pelo menos um membro';
+                statusEl.className = 'sp-status';
+            }
+            return;
+        }
+        
+        if (!confirm(`Enviar mensagem para ${selected.length} membro(s)?`)) {
+            return;
+        }
+        
+        if (statusEl) {
+            statusEl.textContent = `⏳ Enviando para ${selected.length} membro(s)...`;
+            statusEl.className = 'sp-status';
+        }
+        
+        try {
+            const results = await window.teamSystem?.sendToTeam(message);
+            if (statusEl) {
+                statusEl.textContent = `✅ Enviado: ${results.success}/${results.total} | ❌ Falhas: ${results.failed}`;
+                statusEl.className = 'sp-status';
+            }
+            document.getElementById('team-message').value = '';
+            renderTeamMembersList();
+            renderTeamStats();
+            
+            // Show details
+            if (results.failed > 0) {
+                const failedNames = results.details.filter(d => d.status === 'failed').map(d => d.member).join(', ');
+                alert(`Falhas: ${failedNames}`);
+            }
+        } catch (e) {
+            if (statusEl) {
+                statusEl.textContent = `❌ Erro: ${e.message}`;
+                statusEl.className = 'sp-status';
+            }
+        }
+    });
+
     console.log('[Sidepanel] ✅ Todos os handlers configurados');
+});
+
+// ============================================
+// RENDER FUNCTIONS FOR NEW FEATURES
+// ============================================
+
+function renderQuickRepliesList() {
+    const list = document.getElementById('qr-list');
+    const countEl = document.getElementById('qr-count');
+    const replies = window.quickReplies?.getAll() || [];
+    
+    if (countEl) {
+        countEl.textContent = `${replies.length} resposta${replies.length !== 1 ? 's' : ''}`;
+    }
+    
+    if (!list) return;
+    
+    if (replies.length === 0) {
+        list.innerHTML = '<div class="sp-muted" style="text-align: center; padding: 20px;">Nenhuma resposta rápida cadastrada</div>';
+        updateQuickRepliesStats();
+        return;
+    }
+    
+    list.innerHTML = replies.map(r => `
+        <div class="sp-card" style="margin-bottom: 8px; padding: 10px;">
+            <div style="display: flex; justify-content: space-between; align-items: start; gap: 10px;">
+                <div style="flex: 1;">
+                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                        <span style="font-weight: 600; color: var(--mod-primary);">/${r.trigger}</span>
+                        <span class="sp-muted" style="font-size: 11px;">Usado ${r.usageCount || 0}x</span>
+                    </div>
+                    <div style="font-size: 12px; color: var(--mod-text-muted); white-space: pre-wrap; word-break: break-word;">
+                        ${escapeHtml(r.response.slice(0, 100))}${r.response.length > 100 ? '...' : ''}
+                    </div>
+                </div>
+                <button class="sp-btn sp-btn-danger" data-id="${r.id}" style="padding: 4px 8px; font-size: 11px;" onclick="deleteQuickReply('${r.id}')">
+                    🗑️
+                </button>
+            </div>
+        </div>
+    `).join('');
+    
+    updateQuickRepliesStats();
+}
+
+function updateQuickRepliesStats() {
+    const stats = window.quickReplies?.getStats();
+    if (!stats) return;
+    
+    const totalEl = document.getElementById('qr-stat-total');
+    const usageEl = document.getElementById('qr-stat-usage');
+    const mostUsedEl = document.getElementById('qr-stat-most-used');
+    
+    if (totalEl) totalEl.textContent = stats.total;
+    if (usageEl) usageEl.textContent = stats.totalUsage;
+    if (mostUsedEl) {
+        if (stats.mostUsed.length > 0) {
+            mostUsedEl.textContent = `/${stats.mostUsed[0].trigger}`;
+        } else {
+            mostUsedEl.textContent = '-';
+        }
+    }
+}
+
+async function deleteQuickReply(id) {
+    if (!confirm('Remover esta resposta rápida?')) return;
+    
+    await window.quickReplies?.removeReply(id);
+    renderQuickRepliesList();
+}
+
+function renderTeamMembersList() {
+    const list = document.getElementById('team-members-list');
+    const members = window.teamSystem?.getAll() || [];
+    
+    if (!list) return;
+    
+    if (members.length === 0) {
+        list.innerHTML = '<div class="sp-muted" style="text-align: center; padding: 20px;">Nenhum membro cadastrado</div>';
+        return;
+    }
+    
+    list.innerHTML = members.map(m => `
+        <div class="sp-card ${m.selected ? 'selected' : ''}" style="margin-bottom: 6px; padding: 8px; ${m.selected ? 'background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3);' : ''}">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <label style="display: flex; align-items: center; cursor: pointer;">
+                    <input type="checkbox" ${m.selected ? 'checked' : ''} onchange="toggleTeamMember('${m.id}')" style="width: 18px; height: 18px; cursor: pointer;">
+                </label>
+                <div style="flex: 1;">
+                    <div style="font-weight: 600; font-size: 13px;">
+                        ${escapeHtml(m.name || 'Sem nome')}
+                    </div>
+                    <div style="font-size: 11px; color: var(--mod-text-muted);">
+                        ${window.teamSystem?.formatPhone(m.phone) || m.phone}
+                    </div>
+                    ${m.messagesSent > 0 ? `
+                        <div style="font-size: 10px; color: var(--mod-text-muted); margin-top: 2px;">
+                            📤 ${m.messagesSent} mensagem${m.messagesSent !== 1 ? 's' : ''} enviada${m.messagesSent !== 1 ? 's' : ''}
+                        </div>
+                    ` : ''}
+                </div>
+                <button class="sp-btn sp-btn-danger" style="padding: 4px 8px; font-size: 11px;" onclick="deleteTeamMember('${m.id}')">
+                    🗑️
+                </button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function renderTeamStats() {
+    const stats = window.teamSystem?.getStats();
+    if (!stats) return;
+    
+    const totalEl = document.getElementById('team-stat-total');
+    const selectedEl = document.getElementById('team-stat-selected');
+    const sentEl = document.getElementById('team-stat-sent');
+    
+    if (totalEl) totalEl.textContent = stats.totalMembers;
+    if (selectedEl) selectedEl.textContent = stats.selectedCount;
+    if (sentEl) sentEl.textContent = stats.totalMessagesSent;
+}
+
+function toggleTeamMember(id) {
+    window.teamSystem?.toggleSelection(id);
+    renderTeamMembersList();
+    renderTeamStats();
+}
+
+async function deleteTeamMember(id) {
+    if (!confirm('Remover este membro?')) return;
+    
+    await window.teamSystem?.removeMember(id);
+    renderTeamMembersList();
+    renderTeamStats();
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Initialize new features when views are loaded
+window.addEventListener('load', () => {
+    setTimeout(() => {
+        // Load sender name
+        if (window.teamSystem) {
+            const senderNameInput = document.getElementById('team-sender-name');
+            if (senderNameInput) {
+                senderNameInput.value = window.teamSystem.getSenderName();
+            }
+        }
+        
+        // Initial render
+        renderQuickRepliesList();
+        renderTeamMembersList();
+        renderTeamStats();
+    }, 1000);
 });
