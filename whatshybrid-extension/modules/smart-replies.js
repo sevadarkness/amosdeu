@@ -203,7 +203,7 @@
         console.log('[SmartReplies] Configurado:', isConfigured());
     }
 
-    // Nova função para sincronizar com AIService
+    // BUG FIX 2: Nova função para sincronizar com AIService
     async function syncWithAIService() {
         try {
             if (!window.AIService) {
@@ -211,19 +211,24 @@
                 return;
             }
             
+            // BUG FIX 2: Wait for AIService to be fully initialized
+            await new Promise(resolve => setTimeout(resolve, 100));
+            
             // Verificar se AIService tem provider configurado
             if (window.AIService.isProviderConfigured && window.AIService.isProviderConfigured()) {
                 console.log('[SmartReplies] ✅ Sincronizado com AIService');
                 
                 // Obter configuração do provider padrão
-                const defaultProvider = window.AIService.getDefaultProvider?.() || 'openai';
-                const providerConfig = window.AIService.getProviderConfig?.(defaultProvider);
-                
-                if (providerConfig) {
-                    // Atualizar estado local para compatibilidade
+                const defaultProvider = window.AIService.getDefaultProvider?.();
+                if (defaultProvider) {
                     state.provider = defaultProvider;
-                    state.model = providerConfig.model || 'gpt-4o-mini';
-                    // Não copiar apiKey para o state local (segurança)
+                    
+                    // Get model from AIService
+                    const providerConfig = window.AIService.getProviderConfig?.(defaultProvider);
+                    if (providerConfig?.model) {
+                        state.model = providerConfig.model;
+                    }
+                    
                     console.log('[SmartReplies] Provider:', state.provider, 'Model:', state.model);
                 }
             }
