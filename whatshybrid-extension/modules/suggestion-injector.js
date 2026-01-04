@@ -509,13 +509,13 @@
         opacity: 1;
       }
 
-      /* Botão flutuante - 🤖 Robot Button v7.5.0 */
+      /* Botão flutuante - 🤖 Robot Button v7.7.0 */
       #whl-suggestion-fab {
-        position: absolute;
-        bottom: ${CONFIG.FAB_BOTTOM};  /* Above input field */
-        right: ${CONFIG.FAB_RIGHT};    /* Left of send button */
-        width: 40px;
-        height: 40px;
+        position: fixed;  /* CORREÇÃO: fixed em vez de absolute */
+        bottom: 70px;     /* Acima do campo de digitação, não sobrepõe botão enviar */
+        right: 90px;      /* Mais à esquerda para não sobrepor enviar */
+        width: 48px;      /* CORREÇÃO: Aumentado de 40px para 48px (melhor toque) */
+        height: 48px;
         border-radius: 50%;
         background: linear-gradient(135deg, #8B5CF6, #3B82F6);
         border: none;
@@ -523,20 +523,25 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 20px;
+        font-size: 24px;  /* CORREÇÃO: Aumentado de 20px para 24px */
         box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
-        z-index: 1000;
-        transition: transform 0.2s, box-shadow 0.2s;
-      }
-      
-      /* Fallback for when button is on body instead of footer */
-      body > #whl-suggestion-fab {
-        position: fixed;
+        z-index: 999;     /* CORREÇÃO: Reduzido de 1000 para 999 */
+        transition: all 0.3s ease;  /* CORREÇÃO: Transição mais suave */
       }
 
       #whl-suggestion-fab:hover {
         transform: scale(1.1);
-        box-shadow: 0 6px 16px rgba(139, 92, 246, 0.5);
+        box-shadow: 0 6px 16px rgba(139, 92, 246, 0.6);
+      }
+
+      /* NOVO: Estado ativo (quando painel está aberto) */
+      #whl-suggestion-fab.active {
+        background: linear-gradient(135deg, #10B981, #059669);  /* Verde quando aberto */
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+      }
+
+      #whl-suggestion-fab.active:hover {
+        box-shadow: 0 6px 16px rgba(16, 185, 129, 0.6);
       }
     `;
     document.head.appendChild(styles);
@@ -724,32 +729,35 @@
       // Focar novamente após limpeza
       inputField.focus();
       
-      // MÉTODO 1: execCommand (deprecated but widely supported, with fallback)
-      // Note: execCommand is deprecated but still widely supported. Direct insertion is fallback.
-      let inserted = false;
+      // CORREÇÃO CRÍTICA: UMA ÚNICA forma de inserir texto
+      // Usar APENAS execCommand, sem fallback que duplica
       try {
-        inserted = document.execCommand('insertText', false, text);
-        console.log('[SuggestionInjector] execCommand result:', inserted);
+        const inserted = document.execCommand('insertText', false, text);
+        console.log('[SuggestionInjector] Texto inserido com execCommand:', inserted);
+
+        // CORREÇÃO: Verificar se REALMENTE inseriu antes de tentar fallback
+        // Aguardar um tick para o DOM atualizar
+        await new Promise(r => setTimeout(r, 50));
+
+        // Só usar fallback se o campo continuar vazio
+        if (!inputField.textContent || inputField.textContent.trim() === '') {
+          console.warn('[SuggestionInjector] execCommand falhou, usando fallback direto');
+          inputField.textContent = text;
+
+          // Disparar eventos apenas no fallback
+          inputField.dispatchEvent(new InputEvent('input', {
+            bubbles: true,
+            cancelable: true,
+            inputType: 'insertText',
+            data: text
+          }));
+        }
       } catch (e) {
-        console.warn('[SuggestionInjector] execCommand falhou:', e);
-      }
-      
-      // MÉTODO 2: Fallback - inserção direta (only if execCommand failed completely)
-      if (!inserted || !inputField.textContent || inputField.textContent.trim() === '') {
-        console.log('[SuggestionInjector] Usando fallback de inserção direta');
+        console.error('[SuggestionInjector] Erro ao inserir texto:', e);
+        // Fallback em caso de exception
         inputField.textContent = text;
+        inputField.dispatchEvent(new InputEvent('input', { bubbles: true }));
       }
-      
-      // Dispara eventos para WhatsApp detectar
-      inputField.dispatchEvent(new InputEvent('input', { 
-        bubbles: true, 
-        cancelable: true,
-        inputType: 'insertText',
-        data: text 
-      }));
-      
-      // Evento adicional para garantir
-      inputField.dispatchEvent(new Event('change', { bubbles: true }));
       
       // Move cursor para o final
       try {
@@ -795,63 +803,89 @@
   }
 
   function togglePanel() {
+    const fab = document.getElementById('whl-suggestion-fab');
+
     if (state.isVisible) {
       hidePanel();
+      // NOVO: Remover estado visual ativo
+      if (fab) fab.classList.remove('active');
     } else {
       showPanel();
+      // NOVO: Adicionar estado visual ativo
+      if (fab) fab.classList.add('active');
       // Generate suggestion immediately when opening
       requestSuggestionGeneration();
     }
   }
 
-  // Extract messages from WhatsApp Web DOM
+  // Extract messages from WhatsApp Web DOM (ONLY from active chat)
   function extractMessagesFromDOM() {
     const messages = [];
     try {
-      // Seletores para mensagens do WhatsApp Web
+      // CORREÇÃO CRÍTICA: Verificar chat ativo antes de extrair
+      const currentChatId = getCurrentChatId();
+      if (!currentChatId) {
+        console.warn('[SuggestionInjector] Nenhum chat ativo - não é possível extrair mensagens');
+        return messages;
+      }
+
+      // CORREÇÃO CRÍTICA: Buscar apenas dentro do container do chat ativo
+      // O WhatsApp Web renderiza mensagens dentro do elemento [data-tab="1"] ou similar
+      const chatContainer = document.querySelector('[data-tab="1"]') ||
+                            document.querySelector('[role="application"]') ||
+                            document.querySelector('div[class*="conversation-panel"]');
+
+      if (!chatContainer) {
+        console.warn('[SuggestionInjector] Container de chat não encontrado');
+        return messages;
+      }
+
+      // Seletores para mensagens do WhatsApp Web (dentro do container ativo)
       const messageSelectors = [
         '[data-testid="msg-container"]',
         '.message-in, .message-out',
         '[data-id][class*="message"]'
       ];
-      
+
       let msgElements = null;
       for (const sel of messageSelectors) {
-        msgElements = document.querySelectorAll(sel);
+        // CORREÇÃO CRÍTICA: querySelectorAll APENAS dentro do chatContainer
+        msgElements = chatContainer.querySelectorAll(sel);
         if (msgElements && msgElements.length > 0) break;
       }
-      
+
       if (!msgElements || msgElements.length === 0) {
-        console.warn('[SuggestionInjector] Nenhuma mensagem encontrada no DOM');
+        console.warn('[SuggestionInjector] Nenhuma mensagem encontrada no chat ativo');
         return messages;
       }
-      
+
       // Pegar as últimas N mensagens configuradas
       const lastMessages = Array.from(msgElements).slice(-CONFIG.MAX_CONTEXT_MESSAGES);
-      
+
       for (const el of lastMessages) {
         // Detectar se é mensagem recebida ou enviada
-        const isOutgoing = el.classList.contains('message-out') || 
+        const isOutgoing = el.classList.contains('message-out') ||
                            el.closest('[data-testid="msg-container"]')?.querySelector('[data-icon="tail-out"]') ||
                            el.getAttribute('data-id')?.includes('true');
-        
+
         // Extrair texto
         const textEl = el.querySelector('[data-testid="msg-text"], .copyable-text span, .selectable-text span');
         const text = textEl?.textContent?.trim() || '';
-        
+
         if (text) {
           messages.push({
             role: isOutgoing ? 'assistant' : 'user',
-            content: text
+            content: text,
+            chatId: currentChatId  // NOVO: Marcar com chatId para rastreabilidade
           });
         }
       }
-      
-      console.log('[SuggestionInjector] Extraídas', messages.length, 'mensagens do DOM');
+
+      console.log(`[SuggestionInjector] Extraídas ${messages.length} mensagens do chat ativo: ${currentChatId}`);
     } catch (e) {
       console.error('[SuggestionInjector] Erro ao extrair mensagens:', e);
     }
-    
+
     return messages;
   }
 
@@ -952,11 +986,16 @@ Responda APENAS com o texto da sugestão, sem formatação adicional.`;
         return domMessages.slice(-5).map(m => `${m.role === 'user' ? 'Cliente' : 'Você'}: ${m.content}`).join('\n');
       }
       
-      // PRIORIDADE 2: Tentar Store do WhatsApp
-      if (window.Store?.Msg?.getModelsArray) {
-        const msgs = window.Store.Msg.getModelsArray().slice(-CONFIG.MAX_CONTEXT_MESSAGES);
-        if (msgs.length > 0) {
-          return msgs.map(m => `${m.fromMe ? 'Você' : 'Cliente'}: ${m.body || ''}`).join('\n');
+      // PRIORIDADE 2: Tentar Store do WhatsApp (FILTRADO por chat ativo)
+      if (window.Store?.Msg && chatId) {
+        // CORREÇÃO CRÍTICA: Filtrar apenas mensagens do chat ativo
+        const allMsgs = window.Store.Msg.getModelsArray ? window.Store.Msg.getModelsArray() : [];
+        const chatMessages = allMsgs.filter(m => m.id?.remote === chatId);
+        const lastMsgs = chatMessages.slice(-CONFIG.MAX_CONTEXT_MESSAGES);
+
+        if (lastMsgs.length > 0) {
+          console.log(`[SuggestionInjector] Usando ${lastMsgs.length} mensagens filtradas do Store (chat: ${chatId})`);
+          return lastMsgs.map(m => `${m.fromMe ? 'Você' : 'Cliente'}: ${m.body || ''}`).join('\n');
         }
       }
       
