@@ -9306,6 +9306,34 @@ if (cmd === 'GET_STATE') {
       return true; // async response
     }
 
+    // PERFORM DEEP SCAN
+    if (msg.action === 'performDeepScan') {
+      console.log('[WHL] 🔬 Recebido pedido de DeepScan');
+
+      (async () => {
+        try {
+          // Verificar se RecoverAdvanced está disponível
+          if (!window.RecoverAdvanced?.executeDeepScan) {
+            sendResponse({ success: false, error: 'RecoverAdvanced não disponível' });
+            return;
+          }
+
+          // Executar DeepScan
+          const result = await window.RecoverAdvanced.executeDeepScan((progress) => {
+            // TODO: Enviar atualizações de progresso para sidepanel via chrome.runtime.sendMessage
+            console.log('[WHL] DeepScan progress:', progress);
+          });
+
+          sendResponse(result);
+        } catch (e) {
+          console.error('[WHL] DeepScan error:', e);
+          sendResponse({ success: false, error: e.message || String(e) });
+        }
+      })();
+
+      return true; // async response
+    }
+
     return false;
   });
 

@@ -1507,55 +1507,29 @@ function showView(viewName) {
       }
     });
     
-    // BUG 7: Deep Scan with RecoverAdvanced.executeDeepScan() and progress UI
+    // BUG 7: Deep Scan with RecoverAdvanced.executeDeepScan() via sendToActiveTab
     $('recover_deep_scan')?.addEventListener('click', async () => {
       const deepScanBtn = $('recover_deep_scan');
       const st = $('sp_recover_status');
       if (!deepScanBtn || !st) return;
-      
+
       if (!confirm('🔬 Deep Scan pode levar vários minutos.\n\nIsso vai carregar mensagens antigas de todos os chats.\n\nContinuar?')) {
         return;
       }
-      
-      // Create progress UI
-      const progressDiv = document.createElement('div');
-      progressDiv.id = 'recover-progress';
-      progressDiv.innerHTML = `
-        <div style="background:rgba(0,0,0,0.3);border-radius:8px;padding:16px;margin:12px 0;">
-          <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
-            <span id="deepscan-status" style="font-weight:500;">Iniciando...</span>
-            <span id="deepscan-percent" style="font-weight:600;">0%</span>
-          </div>
-          <div style="background:rgba(255,255,255,0.1);border-radius:4px;height:8px;overflow:hidden;">
-            <div id="deepscan-bar" style="background:linear-gradient(90deg,#8b5cf6,#3b82f6);height:100%;width:0%;transition:width 0.3s;"></div>
-          </div>
-          <div id="deepscan-details" style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:8px;">
-            Preparando...
-          </div>
-        </div>
-      `;
-      st.parentElement.insertBefore(progressDiv, st.nextSibling);
-      
+
       deepScanBtn.disabled = true;
       deepScanBtn.innerHTML = '🔍 Escaneando...';
-      
+      st.textContent = '🔬 Executando Deep Scan (isso pode demorar)...';
+
       try {
-        const result = await window.RecoverAdvanced.executeDeepScan((progress) => {
-          document.getElementById('deepscan-bar').style.width = `${progress.progress}%`;
-          document.getElementById('deepscan-percent').textContent = `${progress.progress}%`;
-          document.getElementById('deepscan-status').textContent = progress.status;
-          if (progress.detail) {
-            document.getElementById('deepscan-details').textContent = progress.detail;
-          }
-        });
-        
-        if (result.success) {
+        const result = await sendToActiveTab({ action: 'performDeepScan' });
+
+        if (result?.success) {
           showToast(`✅ DeepScan completo! ${result.found} mensagens`, 'success');
-          renderRecoverTimeline();
+          await recoverRefresh(true);
           st.textContent = `✅ Deep Scan: ${result.found} mensagens encontradas`;
         } else {
-          showToast('❌ Erro no DeepScan', 'error');
-          st.textContent = '❌ Erro no DeepScan';
+          throw new Error(result?.error || 'Falha no DeepScan');
         }
       } catch (error) {
         showToast('❌ Erro: ' + error.message, 'error');
@@ -1564,7 +1538,6 @@ function showView(viewName) {
       } finally {
         deepScanBtn.disabled = false;
         deepScanBtn.innerHTML = '🔍 DeepScan';
-        setTimeout(() => progressDiv.remove(), 3000);
       }
     });
     
