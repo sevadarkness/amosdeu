@@ -2242,7 +2242,8 @@
   window.RecoverAdvanced = {
     // Inicialização
     init,
-    
+    loadFromStorage,
+
     // Mensagens
     getMessages: () => [...state.messages],
     getFilteredMessages,
