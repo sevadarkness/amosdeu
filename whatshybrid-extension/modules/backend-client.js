@@ -14,9 +14,9 @@
     REQUEST_TIMEOUT: 30000,
     RETRY_ATTEMPTS: 3,
     RETRY_DELAY: 1000,
-    // ⚠️ BACKEND DESABILITADO POR PADRÃO
-    // Para habilitar: mude ENABLED para true e configure o backend em localhost:3000
-    ENABLED: false
+    // ✅ BACKEND HABILITADO
+    // Configure o backend em localhost:3000 antes de usar
+    ENABLED: true
   };
 
   let state = {
