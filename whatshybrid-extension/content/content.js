@@ -9251,7 +9251,7 @@ if (cmd === 'GET_STATE') {
     // ENVIAR ARQUIVO
     if (msg.type === 'WHL_SEND_FILE_DIRECT') {
       console.log('[WHL] 📁 Recebido pedido de envio de arquivo');
-      
+
       // Enviar para WPP Hooks via postMessage
       window.postMessage({
         type: 'WHL_SEND_FILE_DIRECT',
@@ -9260,7 +9260,7 @@ if (cmd === 'GET_STATE') {
         filename: msg.filename,
         caption: msg.caption || ''
       }, window.location.origin);
-      
+
       // Ouvir resposta
       const fileListener = (event) => {
         if (event.data?.type === 'WHL_SEND_FILE_RESULT') {
@@ -9269,15 +9269,71 @@ if (cmd === 'GET_STATE') {
         }
       };
       window.addEventListener('message', fileListener);
-      
+
       // Timeout de 30 segundos
       setTimeout(() => {
         window.removeEventListener('message', fileListener);
       }, 30000);
-      
+
       return true; // async response
     }
-    
+
+    // PERFORM SNAPSHOT
+    if (msg.action === 'performSnapshot') {
+      console.log('[WHL] 📸 Recebido pedido de snapshot');
+
+      // Enviar para WPP Hooks via postMessage
+      window.postMessage({
+        type: 'performSnapshot',
+        action: 'performSnapshot'
+      }, window.location.origin);
+
+      // Ouvir resposta
+      const snapshotListener = (event) => {
+        if (event.data?.type === 'WHL_SNAPSHOT_RESULT') {
+          window.removeEventListener('message', snapshotListener);
+          sendResponse(event.data);
+        }
+      };
+      window.addEventListener('message', snapshotListener);
+
+      // Timeout de 60 segundos (snapshot pode demorar mais)
+      setTimeout(() => {
+        window.removeEventListener('message', snapshotListener);
+        sendResponse({ success: false, error: 'Timeout ao capturar snapshot' });
+      }, 60000);
+
+      return true; // async response
+    }
+
+    // PERFORM DEEP SCAN
+    if (msg.action === 'performDeepScan') {
+      console.log('[WHL] 🔬 Recebido pedido de DeepScan');
+
+      (async () => {
+        try {
+          // Verificar se RecoverAdvanced está disponível
+          if (!window.RecoverAdvanced?.executeDeepScan) {
+            sendResponse({ success: false, error: 'RecoverAdvanced não disponível' });
+            return;
+          }
+
+          // Executar DeepScan
+          const result = await window.RecoverAdvanced.executeDeepScan((progress) => {
+            // TODO: Enviar atualizações de progresso para sidepanel via chrome.runtime.sendMessage
+            console.log('[WHL] DeepScan progress:', progress);
+          });
+
+          sendResponse(result);
+        } catch (e) {
+          console.error('[WHL] DeepScan error:', e);
+          sendResponse({ success: false, error: e.message || String(e) });
+        }
+      })();
+
+      return true; // async response
+    }
+
     return false;
   });
 

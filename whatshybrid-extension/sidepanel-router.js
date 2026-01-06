@@ -893,29 +893,68 @@ function showView(viewName) {
     if (stateForPhone?.queue?.[stateForPhone.index]?.phone) {
       phone = stateForPhone.queue[stateForPhone.index].phone;
     }
-    
+
     // Process template variables if templateManager is available
     let msgProcessed = messageRaw;
     if (window.templateManager && messageRaw) {
       const contact = { phone, numero: phone };
       msgProcessed = window.templateManager.processVariables(messageRaw, contact);
     }
-    
+
     // Also replace {phone} variable (existing functionality)
     msgProcessed = msgProcessed.replace(/\{phone\}/g, phone);
 
     if (textEl) textEl.innerHTML = highlightVariables(msgProcessed);
 
-    const data = principalImageData || null;
+    // Handle media preview (image, audio, file)
     if (imgEl) {
-      if (data) {
-        imgEl.src = data;
+      // Priority: Image > Audio > File
+      if (principalImageData) {
+        // Show image
+        imgEl.src = principalImageData;
         imgEl.style.display = 'block';
+        imgEl.style.maxWidth = '100%';
+        imgEl.style.borderRadius = '10px';
+        imgEl.style.marginBottom = '8px';
+      } else if (principalAudioData) {
+        // Show audio player
+        imgEl.outerHTML = `<audio id="sp_preview_img" controls style="display:block;width:100%;max-width:300px;margin-bottom:8px">
+          <source src="${principalAudioData}" type="${principalAudioMime || 'audio/ogg'}">
+        </audio>`;
+      } else if (principalFileData) {
+        // Show file icon/name
+        const fileIcon = getFileIcon(principalFileMime);
+        imgEl.outerHTML = `<div id="sp_preview_img" style="display:flex;align-items:center;gap:8px;padding:8px;background:rgba(0,0,0,0.1);border-radius:8px;margin-bottom:8px;">
+          <span style="font-size:24px;">${fileIcon}</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${principalFileName || 'arquivo'}</div>
+            <div style="font-size:11px;opacity:0.7;">Documento</div>
+          </div>
+        </div>`;
       } else {
-        imgEl.removeAttribute('src');
-        imgEl.style.display = 'none';
+        // No media
+        const currentImgEl = $('sp_preview_img');
+        if (currentImgEl && currentImgEl.tagName === 'IMG') {
+          currentImgEl.removeAttribute('src');
+          currentImgEl.style.display = 'none';
+        } else if (currentImgEl) {
+          // Replace with img tag if it was changed to audio/div
+          currentImgEl.outerHTML = '<img id="sp_preview_img" src="" style="display:none;" />';
+        }
       }
     }
+  }
+
+  function getFileIcon(mimeType) {
+    if (!mimeType) return '📄';
+    if (mimeType.startsWith('application/pdf')) return '📕';
+    if (mimeType.startsWith('application/vnd.ms-excel') || mimeType.includes('spreadsheet')) return '📊';
+    if (mimeType.startsWith('application/vnd.ms-powerpoint') || mimeType.includes('presentation')) return '📊';
+    if (mimeType.startsWith('application/msword') || mimeType.includes('document')) return '📝';
+    if (mimeType.startsWith('application/zip') || mimeType.startsWith('application/x-rar')) return '🗜️';
+    if (mimeType.startsWith('text/')) return '📃';
+    if (mimeType.startsWith('video/')) return '🎥';
+    return '📄';
   }
 
   function principalScheduleSync() {
@@ -1197,7 +1236,7 @@ function showView(viewName) {
 
     if (imgBtn) imgBtn.textContent = hasImage ? '📎 Trocar imagem' : '📎 Anexar imagem';
     if (fileBtn) fileBtn.textContent = hasFile ? '📁 Trocar arquivo' : '📁 Anexar Arquivo';
-    if (audioBtn) audioBtn.textContent = hasAudio ? '🎤 Regravar Áudio' : '🎤 Gravar Áudio';
+    if (audioBtn) audioBtn.textContent = hasAudio ? '🎤 Trocar Áudio' : '🎤 Anexar Áudio';
 
 
 
@@ -1507,55 +1546,29 @@ function showView(viewName) {
       }
     });
     
-    // BUG 7: Deep Scan with RecoverAdvanced.executeDeepScan() and progress UI
+    // BUG 7: Deep Scan with RecoverAdvanced.executeDeepScan() via sendToActiveTab
     $('recover_deep_scan')?.addEventListener('click', async () => {
       const deepScanBtn = $('recover_deep_scan');
       const st = $('sp_recover_status');
       if (!deepScanBtn || !st) return;
-      
+
       if (!confirm('🔬 Deep Scan pode levar vários minutos.\n\nIsso vai carregar mensagens antigas de todos os chats.\n\nContinuar?')) {
         return;
       }
-      
-      // Create progress UI
-      const progressDiv = document.createElement('div');
-      progressDiv.id = 'recover-progress';
-      progressDiv.innerHTML = `
-        <div style="background:rgba(0,0,0,0.3);border-radius:8px;padding:16px;margin:12px 0;">
-          <div style="display:flex;justify-content:space-between;margin-bottom:8px;">
-            <span id="deepscan-status" style="font-weight:500;">Iniciando...</span>
-            <span id="deepscan-percent" style="font-weight:600;">0%</span>
-          </div>
-          <div style="background:rgba(255,255,255,0.1);border-radius:4px;height:8px;overflow:hidden;">
-            <div id="deepscan-bar" style="background:linear-gradient(90deg,#8b5cf6,#3b82f6);height:100%;width:0%;transition:width 0.3s;"></div>
-          </div>
-          <div id="deepscan-details" style="font-size:11px;color:rgba(255,255,255,0.5);margin-top:8px;">
-            Preparando...
-          </div>
-        </div>
-      `;
-      st.parentElement.insertBefore(progressDiv, st.nextSibling);
-      
+
       deepScanBtn.disabled = true;
       deepScanBtn.innerHTML = '🔍 Escaneando...';
-      
+      st.textContent = '🔬 Executando Deep Scan (isso pode demorar)...';
+
       try {
-        const result = await window.RecoverAdvanced.executeDeepScan((progress) => {
-          document.getElementById('deepscan-bar').style.width = `${progress.progress}%`;
-          document.getElementById('deepscan-percent').textContent = `${progress.progress}%`;
-          document.getElementById('deepscan-status').textContent = progress.status;
-          if (progress.detail) {
-            document.getElementById('deepscan-details').textContent = progress.detail;
-          }
-        });
-        
-        if (result.success) {
+        const result = await sendToActiveTab({ action: 'performDeepScan' });
+
+        if (result?.success) {
           showToast(`✅ DeepScan completo! ${result.found} mensagens`, 'success');
-          renderRecoverTimeline();
+          await recoverRefresh(true);
           st.textContent = `✅ Deep Scan: ${result.found} mensagens encontradas`;
         } else {
-          showToast('❌ Erro no DeepScan', 'error');
-          st.textContent = '❌ Erro no DeepScan';
+          throw new Error(result?.error || 'Falha no DeepScan');
         }
       } catch (error) {
         showToast('❌ Erro: ' + error.message, 'error');
@@ -1564,7 +1577,6 @@ function showView(viewName) {
       } finally {
         deepScanBtn.disabled = false;
         deepScanBtn.innerHTML = '🔍 DeepScan';
-        setTimeout(() => progressDiv.remove(), 3000);
       }
     });
     
@@ -1588,21 +1600,28 @@ function showView(viewName) {
   async function updateRecoverSyncButton() {
     const syncBtn = $('recover_sync_backend');
     if (!syncBtn) return;
-    
+
     try {
       const status = await window.RecoverAdvanced.checkBackendConnection();
-      
+
+      // ⚠️ Se backend está desabilitado, ocultar botão completamente
+      if (status.disabled) {
+        syncBtn.style.display = 'none';
+        return;
+      }
+
       if (status.connected) {
+        syncBtn.style.display = '';
         syncBtn.innerHTML = '☁️ Sincronizar';
         syncBtn.disabled = false;
         syncBtn.title = `Conectado${status.user ? ' como ' + status.user.name : ''}`;
         syncBtn.style.opacity = '1';
-        
+
         // Set up click handler for sync
         syncBtn.onclick = async () => {
           syncBtn.innerHTML = '⏳ Sincronizando...';
           syncBtn.disabled = true;
-          
+
           try {
             const result = await window.RecoverAdvanced.syncWithBackend();
             if (result) {
@@ -1617,6 +1636,7 @@ function showView(viewName) {
           }
         };
       } else {
+        syncBtn.style.display = '';
         syncBtn.innerHTML = '⚠️ Backend Offline';
         syncBtn.disabled = true;
         syncBtn.title = getReasonText(status.reason);
