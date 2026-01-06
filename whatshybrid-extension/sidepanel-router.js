@@ -910,36 +910,50 @@ function showView(viewName) {
     if (imgEl) {
       // Priority: Image > Audio > File
       if (principalImageData) {
-        // Show image
-        imgEl.src = principalImageData;
-        imgEl.style.display = 'block';
-        imgEl.style.maxWidth = '100%';
-        imgEl.style.borderRadius = '10px';
-        imgEl.style.marginBottom = '8px';
+        // Show image - restore to IMG if needed
+        if (imgEl.tagName !== 'IMG') {
+          imgEl.outerHTML = '<img id="sp_preview_img" src="" style="display:none;" />';
+          const newImgEl = $('sp_preview_img');
+          if (newImgEl) {
+            newImgEl.src = principalImageData;
+            newImgEl.style.display = 'block';
+            newImgEl.style.maxWidth = '100%';
+            newImgEl.style.borderRadius = '10px';
+            newImgEl.style.marginBottom = '8px';
+          }
+        } else {
+          imgEl.src = principalImageData;
+          imgEl.style.display = 'block';
+          imgEl.style.maxWidth = '100%';
+          imgEl.style.borderRadius = '10px';
+          imgEl.style.marginBottom = '8px';
+        }
       } else if (principalAudioData) {
         // Show audio player
-        imgEl.outerHTML = `<audio id="sp_preview_img" controls style="display:block;width:100%;max-width:300px;margin-bottom:8px">
-          <source src="${principalAudioData}" type="${principalAudioMime || 'audio/ogg'}">
-        </audio>`;
+        if (imgEl.tagName !== 'AUDIO') {
+          imgEl.outerHTML = `<audio id="sp_preview_img" controls style="display:block;width:100%;max-width:300px;margin-bottom:8px">
+            <source src="${principalAudioData}" type="${principalAudioMime || 'audio/ogg'}">
+          </audio>`;
+        }
       } else if (principalFileData) {
         // Show file icon/name
-        const fileIcon = getFileIcon(principalFileMime);
-        imgEl.outerHTML = `<div id="sp_preview_img" style="display:flex;align-items:center;gap:8px;padding:8px;background:rgba(0,0,0,0.1);border-radius:8px;margin-bottom:8px;">
-          <span style="font-size:24px;">${fileIcon}</span>
-          <div style="flex:1;min-width:0;">
-            <div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${principalFileName || 'arquivo'}</div>
-            <div style="font-size:11px;opacity:0.7;">Documento</div>
-          </div>
-        </div>`;
+        if (imgEl.tagName !== 'DIV') {
+          const fileIcon = getFileIcon(principalFileMime);
+          imgEl.outerHTML = `<div id="sp_preview_img" style="display:flex;align-items:center;gap:8px;padding:8px;background:rgba(0,0,0,0.1);border-radius:8px;margin-bottom:8px;">
+            <span style="font-size:24px;">${fileIcon}</span>
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${principalFileName || 'arquivo'}</div>
+              <div style="font-size:11px;opacity:0.7;">Documento</div>
+            </div>
+          </div>`;
+        }
       } else {
-        // No media
-        const currentImgEl = $('sp_preview_img');
-        if (currentImgEl && currentImgEl.tagName === 'IMG') {
-          currentImgEl.removeAttribute('src');
-          currentImgEl.style.display = 'none';
-        } else if (currentImgEl) {
-          // Replace with img tag if it was changed to audio/div
-          currentImgEl.outerHTML = '<img id="sp_preview_img" src="" style="display:none;" />';
+        // No media - restore to hidden IMG
+        if (imgEl.tagName !== 'IMG') {
+          imgEl.outerHTML = '<img id="sp_preview_img" src="" style="display:none;" />';
+        } else {
+          imgEl.removeAttribute('src');
+          imgEl.style.display = 'none';
         }
       }
     }
@@ -2230,22 +2244,40 @@ function showView(viewName) {
           break;
           
         case 'download-media':
-          // FIX #10: Download em tamanho real
+          // NOVA LÓGICA: Vai até a mensagem deletada e baixa a mídia da mensagem ACIMA
           btn.textContent = '⏳';
+          btn.disabled = true;
           try {
-            if (msg?.mediaData) {
-              const a = document.createElement('a');
-              a.href = toDataUrl(msg.mediaData, msg.mimetype) || '';
-              a.download = `recover_${Date.now()}_${msg.filename || 'media'}`;
-              a.click();
-              showToast('✅ Download concluído!');
+            showToast('🔍 Localizando mensagem...', 'info');
+
+            // Envia comando para content script navegar até a mensagem
+            const result = await sendToActiveTab({
+              action: 'downloadDeletedMessageMedia',
+              messageId: msg.id,
+              chatId: msg.chatId
+            });
+
+            if (result?.success) {
+              showToast('✅ Download iniciado!', 'success');
             } else {
-              showToast('❌ Mídia não disponível');
+              // Fallback: tenta baixar da mídia em cache (baixa qualidade)
+              if (msg?.mediaData) {
+                const a = document.createElement('a');
+                a.href = toDataUrl(msg.mediaData, msg.mimetype) || '';
+                a.download = `recover_${Date.now()}_${msg.filename || 'media'}`;
+                a.click();
+                showToast('⚠️ Download de cache (baixa qualidade)', 'warning');
+              } else {
+                throw new Error(result?.error || 'Mídia não disponível');
+              }
             }
           } catch(e) {
-            showToast('❌ Erro ao baixar');
+            showToast(`❌ ${e.message || 'Erro ao baixar'}`, 'error');
+            console.error('[Recover] Download error:', e);
+          } finally {
+            btn.textContent = '⬇️';
+            btn.disabled = false;
           }
-          setTimeout(() => { btn.textContent = '⬇️'; }, 1000);
           break;
           
         case 'transcribe':

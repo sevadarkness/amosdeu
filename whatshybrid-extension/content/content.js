@@ -9334,6 +9334,50 @@ if (cmd === 'GET_STATE') {
       return true; // async response
     }
 
+    // DOWNLOAD DELETED MESSAGE MEDIA
+    if (msg.action === 'downloadDeletedMessageMedia') {
+      console.log('[WHL] 📥 Recebido pedido de download de mídia deletada');
+
+      (async () => {
+        try {
+          const { messageId, chatId } = msg;
+
+          if (!messageId || !chatId) {
+            sendResponse({ success: false, error: 'messageId ou chatId não fornecido' });
+            return;
+          }
+
+          // Envia para wpp-hooks.js executar a lógica
+          window.postMessage({
+            type: 'WHL_DOWNLOAD_DELETED_MEDIA',
+            messageId,
+            chatId
+          }, window.location.origin);
+
+          // Ouvir resposta
+          const downloadListener = (event) => {
+            if (event.data?.type === 'WHL_DOWNLOAD_DELETED_MEDIA_RESULT') {
+              window.removeEventListener('message', downloadListener);
+              sendResponse(event.data);
+            }
+          };
+          window.addEventListener('message', downloadListener);
+
+          // Timeout de 30 segundos
+          setTimeout(() => {
+            window.removeEventListener('message', downloadListener);
+            sendResponse({ success: false, error: 'Timeout ao baixar mídia' });
+          }, 30000);
+
+        } catch (e) {
+          console.error('[WHL] Download error:', e);
+          sendResponse({ success: false, error: e.message || String(e) });
+        }
+      })();
+
+      return true; // async response
+    }
+
     return false;
   });
 

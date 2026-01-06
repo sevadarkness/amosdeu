@@ -4642,6 +4642,102 @@ window.whl_hooks_main = () => {
                 window.postMessage({ type: 'WHL_DEEP_SCAN_RESULT', success: false, error: e.message }, window.location.origin);
             }
         }
+
+        // DOWNLOAD DELETED MESSAGE MEDIA - Nova lógica
+        if (event.data?.type === 'WHL_DOWNLOAD_DELETED_MEDIA') {
+            console.log('[WHL Hooks] 📥 Iniciando download de mídia deletada...');
+
+            try {
+                const { messageId, chatId } = event.data;
+
+                // 1. Encontrar o chat
+                const ChatCollection = tryRequireModule('WAWebChatCollection');
+                if (!ChatCollection?.ChatCollection) {
+                    throw new Error('ChatCollection não disponível');
+                }
+
+                const chats = ChatCollection.ChatCollection.getModelsArray() || [];
+                const targetChat = chats.find(c =>
+                    c.id?._serialized === chatId || c.id?.user === chatId.split('@')[0]
+                );
+
+                if (!targetChat) {
+                    throw new Error('Chat não encontrado');
+                }
+
+                // 2. Abrir o chat
+                await targetChat.sendSeen();
+
+                // 3. Encontrar a mensagem deletada e a mensagem ACIMA dela
+                const messages = targetChat.msgs?.getModelsArray?.() || [];
+                const deletedIndex = messages.findIndex(m =>
+                    m.id?.id === messageId || m.id?._serialized === messageId
+                );
+
+                if (deletedIndex === -1) {
+                    throw new Error('Mensagem deletada não encontrada no chat');
+                }
+
+                // 4. Pegar a mensagem ACIMA (index - 1)
+                if (deletedIndex === 0) {
+                    throw new Error('Mensagem deletada é a primeira do chat, sem mensagem acima');
+                }
+
+                const messageAbove = messages[deletedIndex - 1];
+
+                if (!messageAbove) {
+                    throw new Error('Mensagem acima não encontrada');
+                }
+
+                // 5. Verificar se a mensagem acima tem mídia
+                const hasMedia = messageAbove.mediaData || messageAbove.body?.startsWith('data:');
+
+                if (!hasMedia) {
+                    throw new Error('Mensagem acima não contém mídia');
+                }
+
+                // 6. Baixar a mídia
+                let mediaData = messageAbove.mediaData;
+                let mimetype = messageAbove.mimetype || 'application/octet-stream';
+                let filename = messageAbove.filename || `media_${Date.now()}`;
+
+                // Se não tem mediaData, tentar baixar
+                if (!mediaData && messageAbove.downloadMedia) {
+                    const blob = await messageAbove.downloadMedia();
+                    if (blob) {
+                        const reader = new FileReader();
+                        mediaData = await new Promise((resolve) => {
+                            reader.onloadend = () => resolve(reader.result);
+                            reader.readAsDataURL(blob);
+                        });
+                    }
+                }
+
+                if (!mediaData) {
+                    throw new Error('Não foi possível obter a mídia');
+                }
+
+                // 7. Criar link de download
+                const a = document.createElement('a');
+                a.href = mediaData.startsWith('data:') ? mediaData : `data:${mimetype};base64,${mediaData}`;
+                a.download = `recovered_${filename}`;
+                a.click();
+
+                console.log('[WHL Hooks] ✅ Download de mídia deletada concluído');
+                window.postMessage({
+                    type: 'WHL_DOWNLOAD_DELETED_MEDIA_RESULT',
+                    success: true
+                }, window.location.origin);
+
+            } catch (e) {
+                console.error('[WHL Hooks] Download error:', e);
+                window.postMessage({
+                    type: 'WHL_DOWNLOAD_DELETED_MEDIA_RESULT',
+                    success: false,
+                    error: e.message
+                }, window.location.origin);
+            }
+        }
     });
     
     // Expose helper functions for use by sidepanel and other components
