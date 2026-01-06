@@ -75,21 +75,28 @@ class QuickRepliesSystem {
 
   // Observa o composer para detectar /trigger
   setupComposerWatcher() {
+    // Tentar anexar imediatamente
+    setTimeout(() => this.attachToComposer(), 1000);
+    setTimeout(() => this.attachToComposer(), 3000);
+    setTimeout(() => this.attachToComposer(), 5000);
+
+    // Observer para detectar mudanças
     const observer = new MutationObserver(() => {
-      this.checkForTrigger();
+      this.attachToComposer();
     });
 
     // Observar mudanças no body para detectar quando o composer aparece
     observer.observe(document.body, { childList: true, subtree: true });
 
-    // Fallback: verificar periodicamente (menos frequente - a cada 5 segundos)
-    setInterval(() => this.attachToComposer(), 5000);
+    // Fallback: verificar periodicamente
+    setInterval(() => this.attachToComposer(), 10000);
   }
 
   attachToComposer() {
     const selectors = [
-      'footer div[contenteditable="true"][role="textbox"]',
       '[data-testid="conversation-compose-box-input"]',
+      'footer div[contenteditable="true"][role="textbox"]',
+      'div[contenteditable="true"][data-tab="10"]',
       'div[contenteditable="true"][role="textbox"]'
     ];
 
@@ -97,14 +104,23 @@ class QuickRepliesSystem {
       const composer = document.querySelector(sel);
       if (composer && !composer.dataset.whlQuickReplies) {
         composer.dataset.whlQuickReplies = 'true';
-        
-        composer.addEventListener('input', () => this.checkForTrigger());
-        composer.addEventListener('keydown', (e) => this.handleKeydown(e));
-        
-        console.log('[QuickReplies] Composer anexado');
-        break;
+
+        // Remover listeners antigos (se existirem)
+        const inputHandler = () => this.checkForTrigger();
+        const keydownHandler = (e) => this.handleKeydown(e);
+
+        composer.addEventListener('input', inputHandler);
+        composer.addEventListener('keydown', keydownHandler);
+
+        // Guardar referências para cleanup
+        composer._whlInputHandler = inputHandler;
+        composer._whlKeydownHandler = keydownHandler;
+
+        console.log('[QuickReplies] ✅ Composer anexado:', sel);
+        return true;
       }
     }
+    return false;
   }
 
   checkForTrigger() {
@@ -256,8 +272,10 @@ class QuickRepliesSystem {
 
   getComposer() {
     const selectors = [
+      '[data-testid="conversation-compose-box-input"]',
       'footer div[contenteditable="true"][role="textbox"]',
-      '[data-testid="conversation-compose-box-input"]'
+      'div[contenteditable="true"][data-tab="10"]',
+      'div[contenteditable="true"][role="textbox"]'
     ];
     for (const sel of selectors) {
       const el = document.querySelector(sel);

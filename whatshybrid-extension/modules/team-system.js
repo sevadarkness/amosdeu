@@ -929,6 +929,142 @@
     STATUSES
   };
 
+  // ============================================================
+  // WRAPPER COMPATÍVEL COM SIDEPANEL (window.teamSystem)
+  // ============================================================
+
+  // Estado do sistema de equipe simplificado para o sidepanel
+  const teamSystemSimplified = {
+    members: [],
+    selectedIds: new Set(),
+    senderName: 'Equipe WhatsHybrid',
+
+    // Inicializar
+    async init() {
+      await window.TeamSystem.init();
+      await this.syncMembers();
+      console.log('[teamSystem] ✅ Wrapper inicializado');
+    },
+
+    // Sincronizar membros do TeamSystem principal
+    async syncMembers() {
+      const teamMembers = window.TeamSystem.getMembers();
+      // Converter para formato esperado pelo sidepanel (name + phone)
+      this.members = teamMembers.map(m => ({
+        id: m.id,
+        name: m.name,
+        phone: m.email || '', // email pode conter telefone
+        selected: this.selectedIds.has(m.id)
+      }));
+    },
+
+    // Adicionar membro
+    async addMember(name, phone) {
+      const member = window.TeamSystem.addMember(name, phone, 'agent');
+      await this.syncMembers();
+      console.log('[teamSystem] Membro adicionado:', name);
+      return member;
+    },
+
+    // Remover membro
+    async removeMember(id) {
+      const result = window.TeamSystem.removeMember(id);
+      await this.syncMembers();
+      return result;
+    },
+
+    // Obter todos os membros
+    getAll() {
+      return [...this.members];
+    },
+
+    // Obter membros selecionados
+    getSelected() {
+      return this.members.filter(m => this.selectedIds.has(m.id));
+    },
+
+    // Alternar seleção de membro
+    toggleSelection(id) {
+      if (this.selectedIds.has(id)) {
+        this.selectedIds.delete(id);
+      } else {
+        this.selectedIds.add(id);
+      }
+      this.members.forEach(m => {
+        if (m.id === id) m.selected = this.selectedIds.has(id);
+      });
+    },
+
+    // Selecionar todos
+    selectAll() {
+      this.members.forEach(m => {
+        this.selectedIds.add(m.id);
+        m.selected = true;
+      });
+    },
+
+    // Limpar seleção
+    clearSelection() {
+      this.selectedIds.clear();
+      this.members.forEach(m => m.selected = false);
+    },
+
+    // Definir nome do remetente
+    async setSenderName(name) {
+      this.senderName = name;
+      // Salvar no storage
+      await chrome.storage.local.set({ 'whl_team_sender_name': name });
+    },
+
+    // Obter nome do remetente
+    getSenderName() {
+      return this.senderName;
+    },
+
+    // Enviar para selecionados
+    async sendToSelected(message) {
+      const selected = this.getSelected();
+      if (selected.length === 0) {
+        throw new Error('Nenhum membro selecionado');
+      }
+
+      console.log(`[teamSystem] Enviando para ${selected.length} membros...`);
+
+      // Usar broadcastToTeam do TeamSystem principal
+      const memberIds = selected.map(m => m.id);
+      const results = await window.TeamSystem.broadcastToTeam(memberIds, message, {
+        senderName: this.senderName,
+        includeSignature: true
+      });
+
+      return results;
+    },
+
+    // Estatísticas
+    getStats() {
+      return {
+        total: this.members.length,
+        selected: this.selectedIds.size,
+        totalMessagesSent: this.members.reduce((sum, m) => {
+          const teamMember = window.TeamSystem.getMembers().find(tm => tm.id === m.id);
+          return sum + (teamMember?.stats?.messagesSent || 0);
+        }, 0)
+      };
+    }
+  };
+
+  // Exportar wrapper como window.teamSystem (lowercase)
+  window.teamSystem = teamSystemSimplified;
+
+  // Auto-inicializar wrapper após TeamSystem principal
+  setTimeout(() => {
+    if (window.teamSystem && !window.teamSystem._initialized) {
+      window.teamSystem.init().then(() => {
+        window.teamSystem._initialized = true;
+      });
+    }
+  }, 1000);
+
   // Auto-inicializar
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => setTimeout(init, 500));
