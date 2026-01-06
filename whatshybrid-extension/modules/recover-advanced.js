@@ -1942,13 +1942,23 @@
   // ============================================
   async function checkBackendConnection() {
     console.log('[RecoverAdvanced] 🔍 Checking backend connection...');
-    
+
+    // ⚠️ Verificar se backend está habilitado
+    if (window.BackendClient && typeof window.BackendClient.isConnected === 'function') {
+      // Se BackendClient.isConnected() retorna false E não há token, backend está desabilitado
+      const hasConnection = window.BackendClient.isConnected();
+      if (!hasConnection) {
+        console.log('[RecoverAdvanced] ⚠️ Backend desabilitado (BackendClient.isConnected = false)');
+        return { connected: false, disabled: true, reason: 'backend_disabled' };
+      }
+    }
+
     try {
       // Step 1: Check if we have a token in storage
       const stored = await chrome.storage.local.get(['whl_access_token', 'whl_user']);
       const token = stored.whl_access_token;
       const user = stored.whl_user;
-      
+
       if (!token) {
         console.log('[RecoverAdvanced] No token found');
         return { connected: false, reason: 'no_token' };

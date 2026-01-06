@@ -13,7 +13,10 @@
     DEFAULT_BASE_URL: 'http://localhost:3000',
     REQUEST_TIMEOUT: 30000,
     RETRY_ATTEMPTS: 3,
-    RETRY_DELAY: 1000
+    RETRY_DELAY: 1000,
+    // ⚠️ BACKEND DESABILITADO POR PADRÃO
+    // Para habilitar: mude ENABLED para true e configure o backend em localhost:3000
+    ENABLED: false
   };
 
   let state = {
@@ -33,10 +36,22 @@
   // ============================================
   async function init() {
     if (initialized) return;
-    
+
+    // ⚠️ Verificar se backend está habilitado
+    if (!CONFIG.ENABLED) {
+      console.log('[BackendClient] ⚠️ Backend desabilitado (CONFIG.ENABLED = false)');
+      initialized = true;
+      state.connected = false;
+
+      if (window.EventBus) {
+        window.EventBus.emit('backend:initialized', { connected: false, disabled: true });
+      }
+      return;
+    }
+
     try {
       await loadState();
-      
+
       // Auto-connect se tiver tokens
       if (state.accessToken) {
         await validateToken();
@@ -44,7 +59,7 @@
 
       initialized = true;
       console.log('[BackendClient] ✅ Inicializado');
-      
+
       if (window.EventBus) {
         window.EventBus.emit('backend:initialized', { connected: state.connected });
       }
@@ -94,6 +109,7 @@
   }
 
   function isConnected() {
+    if (!CONFIG.ENABLED) return false;
     return state.connected && !!state.accessToken;
   }
 
@@ -109,8 +125,13 @@
   // HTTP CLIENT
   // ============================================
   async function request(endpoint, options = {}) {
+    // ⚠️ Retornar erro se backend está desabilitado
+    if (!CONFIG.ENABLED) {
+      throw new Error('Backend desabilitado. Configure CONFIG.ENABLED = true para habilitar.');
+    }
+
     const url = `${getBaseUrl()}${endpoint}`;
-    
+
     const headers = {
       'Content-Type': 'application/json',
       ...(state.accessToken && { 'Authorization': `Bearer ${state.accessToken}` }),

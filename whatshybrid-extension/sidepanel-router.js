@@ -1588,21 +1588,28 @@ function showView(viewName) {
   async function updateRecoverSyncButton() {
     const syncBtn = $('recover_sync_backend');
     if (!syncBtn) return;
-    
+
     try {
       const status = await window.RecoverAdvanced.checkBackendConnection();
-      
+
+      // ⚠️ Se backend está desabilitado, ocultar botão completamente
+      if (status.disabled) {
+        syncBtn.style.display = 'none';
+        return;
+      }
+
       if (status.connected) {
+        syncBtn.style.display = '';
         syncBtn.innerHTML = '☁️ Sincronizar';
         syncBtn.disabled = false;
         syncBtn.title = `Conectado${status.user ? ' como ' + status.user.name : ''}`;
         syncBtn.style.opacity = '1';
-        
+
         // Set up click handler for sync
         syncBtn.onclick = async () => {
           syncBtn.innerHTML = '⏳ Sincronizando...';
           syncBtn.disabled = true;
-          
+
           try {
             const result = await window.RecoverAdvanced.syncWithBackend();
             if (result) {
@@ -1617,6 +1624,7 @@ function showView(viewName) {
           }
         };
       } else {
+        syncBtn.style.display = '';
         syncBtn.innerHTML = '⚠️ Backend Offline';
         syncBtn.disabled = true;
         syncBtn.title = getReasonText(status.reason);
