@@ -893,29 +893,68 @@ function showView(viewName) {
     if (stateForPhone?.queue?.[stateForPhone.index]?.phone) {
       phone = stateForPhone.queue[stateForPhone.index].phone;
     }
-    
+
     // Process template variables if templateManager is available
     let msgProcessed = messageRaw;
     if (window.templateManager && messageRaw) {
       const contact = { phone, numero: phone };
       msgProcessed = window.templateManager.processVariables(messageRaw, contact);
     }
-    
+
     // Also replace {phone} variable (existing functionality)
     msgProcessed = msgProcessed.replace(/\{phone\}/g, phone);
 
     if (textEl) textEl.innerHTML = highlightVariables(msgProcessed);
 
-    const data = principalImageData || null;
+    // Handle media preview (image, audio, file)
     if (imgEl) {
-      if (data) {
-        imgEl.src = data;
+      // Priority: Image > Audio > File
+      if (principalImageData) {
+        // Show image
+        imgEl.src = principalImageData;
         imgEl.style.display = 'block';
+        imgEl.style.maxWidth = '100%';
+        imgEl.style.borderRadius = '10px';
+        imgEl.style.marginBottom = '8px';
+      } else if (principalAudioData) {
+        // Show audio player
+        imgEl.outerHTML = `<audio id="sp_preview_img" controls style="display:block;width:100%;max-width:300px;margin-bottom:8px">
+          <source src="${principalAudioData}" type="${principalAudioMime || 'audio/ogg'}">
+        </audio>`;
+      } else if (principalFileData) {
+        // Show file icon/name
+        const fileIcon = getFileIcon(principalFileMime);
+        imgEl.outerHTML = `<div id="sp_preview_img" style="display:flex;align-items:center;gap:8px;padding:8px;background:rgba(0,0,0,0.1);border-radius:8px;margin-bottom:8px;">
+          <span style="font-size:24px;">${fileIcon}</span>
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${principalFileName || 'arquivo'}</div>
+            <div style="font-size:11px;opacity:0.7;">Documento</div>
+          </div>
+        </div>`;
       } else {
-        imgEl.removeAttribute('src');
-        imgEl.style.display = 'none';
+        // No media
+        const currentImgEl = $('sp_preview_img');
+        if (currentImgEl && currentImgEl.tagName === 'IMG') {
+          currentImgEl.removeAttribute('src');
+          currentImgEl.style.display = 'none';
+        } else if (currentImgEl) {
+          // Replace with img tag if it was changed to audio/div
+          currentImgEl.outerHTML = '<img id="sp_preview_img" src="" style="display:none;" />';
+        }
       }
     }
+  }
+
+  function getFileIcon(mimeType) {
+    if (!mimeType) return '📄';
+    if (mimeType.startsWith('application/pdf')) return '📕';
+    if (mimeType.startsWith('application/vnd.ms-excel') || mimeType.includes('spreadsheet')) return '📊';
+    if (mimeType.startsWith('application/vnd.ms-powerpoint') || mimeType.includes('presentation')) return '📊';
+    if (mimeType.startsWith('application/msword') || mimeType.includes('document')) return '📝';
+    if (mimeType.startsWith('application/zip') || mimeType.startsWith('application/x-rar')) return '🗜️';
+    if (mimeType.startsWith('text/')) return '📃';
+    if (mimeType.startsWith('video/')) return '🎥';
+    return '📄';
   }
 
   function principalScheduleSync() {
