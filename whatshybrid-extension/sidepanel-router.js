@@ -2244,22 +2244,40 @@ function showView(viewName) {
           break;
           
         case 'download-media':
-          // FIX #10: Download em tamanho real
+          // NOVA LÓGICA: Vai até a mensagem deletada e baixa a mídia da mensagem ACIMA
           btn.textContent = '⏳';
+          btn.disabled = true;
           try {
-            if (msg?.mediaData) {
-              const a = document.createElement('a');
-              a.href = toDataUrl(msg.mediaData, msg.mimetype) || '';
-              a.download = `recover_${Date.now()}_${msg.filename || 'media'}`;
-              a.click();
-              showToast('✅ Download concluído!');
+            showToast('🔍 Localizando mensagem...', 'info');
+
+            // Envia comando para content script navegar até a mensagem
+            const result = await sendToActiveTab({
+              action: 'downloadDeletedMessageMedia',
+              messageId: msg.id,
+              chatId: msg.chatId
+            });
+
+            if (result?.success) {
+              showToast('✅ Download iniciado!', 'success');
             } else {
-              showToast('❌ Mídia não disponível');
+              // Fallback: tenta baixar da mídia em cache (baixa qualidade)
+              if (msg?.mediaData) {
+                const a = document.createElement('a');
+                a.href = toDataUrl(msg.mediaData, msg.mimetype) || '';
+                a.download = `recover_${Date.now()}_${msg.filename || 'media'}`;
+                a.click();
+                showToast('⚠️ Download de cache (baixa qualidade)', 'warning');
+              } else {
+                throw new Error(result?.error || 'Mídia não disponível');
+              }
             }
           } catch(e) {
-            showToast('❌ Erro ao baixar');
+            showToast(`❌ ${e.message || 'Erro ao baixar'}`, 'error');
+            console.error('[Recover] Download error:', e);
+          } finally {
+            btn.textContent = '⬇️';
+            btn.disabled = false;
           }
-          setTimeout(() => { btn.textContent = '⬇️'; }, 1000);
           break;
           
         case 'transcribe':
