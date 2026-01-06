@@ -1197,7 +1197,7 @@ function showView(viewName) {
 
     if (imgBtn) imgBtn.textContent = hasImage ? '📎 Trocar imagem' : '📎 Anexar imagem';
     if (fileBtn) fileBtn.textContent = hasFile ? '📁 Trocar arquivo' : '📁 Anexar Arquivo';
-    if (audioBtn) audioBtn.textContent = hasAudio ? '🎤 Regravar Áudio' : '🎤 Gravar Áudio';
+    if (audioBtn) audioBtn.textContent = hasAudio ? '🎤 Trocar Áudio' : '🎤 Anexar Áudio';
 
 
 
