@@ -2888,6 +2888,40 @@ window.whl_hooks_main = () => {
             return false;
         }
 
+        // ✅ CAMADA 0: AudioSender (solução testada e validada)
+        console.log('[WHL Hooks] 🎤 [CAMADA 0] Verificando AudioSender...');
+        console.log('[WHL Hooks] 🎤 [CAMADA 0] window.AudioSender existe?', !!window.AudioSender);
+        console.log('[WHL Hooks] 🎤 [CAMADA 0] AudioSender.isAvailable()?', window.AudioSender?.isAvailable());
+
+        if (window.AudioSender?.isAvailable?.()) {
+            try {
+                console.log('[WHL Hooks] 🎤 [CAMADA 0] Tentando via AudioSender...');
+                const chatJid = phoneNumber.includes('@') ? phoneNumber : `${phoneNumber}@c.us`;
+                console.log('[WHL Hooks] 🎤 [CAMADA 0] ChatJID:', chatJid);
+
+                // Calcular duração estimada (aproximação: ~10KB por segundo)
+                const estimatedDuration = Math.max(3, Math.round(blob.size / 10000));
+                console.log('[WHL Hooks] 🎤 [CAMADA 0] Duração estimada:', estimatedDuration, 'segundos');
+
+                // Usar o módulo AudioSender testado
+                const result = await window.AudioSender.send(audioDataUrl, chatJid, estimatedDuration);
+
+                console.log('[WHL Hooks] 🎤 [CAMADA 0] Resultado:', result.success ? 'SUCESSO' : 'FALHA');
+                if (result.success) {
+                    console.log('[WHL Hooks] ✅ [CAMADA 0] Áudio PTT enviado via AudioSender!');
+                    await new Promise(r => setTimeout(r, delayMs));
+                    return true;
+                } else {
+                    console.warn('[WHL Hooks] ⚠️ [CAMADA 0] AudioSender retornou falha:', result.error);
+                }
+            } catch (e) {
+                console.warn('[WHL Hooks] ⚠️ [CAMADA 0] AudioSender lançou exceção:', e.message);
+                console.warn('[WHL Hooks] ⚠️ [CAMADA 0] Stack:', e.stack);
+            }
+        } else {
+            console.log('[WHL Hooks] ⚠️ [CAMADA 0] AudioSender não disponível, pulando...');
+        }
+
         // ✅ CAMADA 1: WPP.js (se disponível)
         console.log('[WHL Hooks] 🎤 [CAMADA 1] Verificando WPP.js...');
         console.log('[WHL Hooks] 🎤 [CAMADA 1] window.WPP existe?', !!window.WPP);

@@ -91,6 +91,7 @@
         "modules/smartbot-autopilot-v2.js",
         "modules/quick-replies.js",
         "modules/ai-suggestion-button.js",
+        "modules/audio-sender.js",
         "modules/business-intelligence.js",
         "modules/training-debug-tools.js",
         "modules/init.js",
