@@ -88,6 +88,7 @@
         "modules/escalation-integration.js",
         "modules/human-typing.js",
         "modules/recover-advanced.js",
+        "modules/recover-visual-injector.js",
         "modules/smartbot-autopilot-v2.js",
         "modules/quick-replies.js",
         "modules/ai-suggestion-button.js",
